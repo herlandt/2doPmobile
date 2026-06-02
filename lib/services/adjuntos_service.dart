@@ -17,10 +17,14 @@ class AdjuntosService extends GetxService {
     final response = await http.get(
       Uri.parse('$_baseUrl/politicas/$politicaId/documentos-requeridos'),
       headers: authService.getHeaders(),
-    );
+    ).timeout(const Duration(seconds: 30));
     if (response.statusCode == 200) {
-      final List<dynamic> data = json.decode(response.body);
+      final List<dynamic> data = json.decode(utf8.decode(response.bodyBytes));
       return data.map((e) => ActividadDocumentos.fromJson(e)).toList();
+    }
+    if (response.statusCode == 401) {
+      await authService.logout();
+      Get.offNamed('/login');
     }
     throw Exception('Error al obtener documentos requeridos: ${response.statusCode}');
   }
@@ -45,7 +49,7 @@ class AdjuntosService extends GetxService {
       if (token != null) request.headers['Authorization'] = 'Bearer $token';
       request.files.add(await http.MultipartFile.fromPath('archivo', archivo.path));
 
-      final streamed = await request.send();
+      final streamed = await request.send().timeout(const Duration(seconds: 60));
       final body = await streamed.stream.bytesToString();
 
       if (streamed.statusCode == 201) {
@@ -66,10 +70,14 @@ class AdjuntosService extends GetxService {
     final response = await http.get(
       Uri.parse('$_baseUrl/tramites/$tramiteId/adjuntos$query'),
       headers: authService.getHeaders(),
-    );
+    ).timeout(const Duration(seconds: 30));
     if (response.statusCode == 200) {
-      final List<dynamic> data = json.decode(response.body);
+      final List<dynamic> data = json.decode(utf8.decode(response.bodyBytes));
       return data.cast<Map<String, dynamic>>();
+    }
+    if (response.statusCode == 401) {
+      await authService.logout();
+      Get.offNamed('/login');
     }
     throw Exception('Error al obtener adjuntos: ${response.statusCode}');
   }

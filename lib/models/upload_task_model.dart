@@ -44,6 +44,7 @@ class UploadTask {
   int intentos;
   final DateTime creadoEn;
   String? ultimoError;
+  DateTime? proximoIntento;
 
   UploadTask({
     required this.id,
@@ -55,6 +56,7 @@ class UploadTask {
     this.intentos = 0,
     DateTime? creadoEn,
     this.ultimoError,
+    this.proximoIntento,
   }) : creadoEn = creadoEn ?? DateTime.now();
 
   Map<String, dynamic> toJson() => {
@@ -67,6 +69,7 @@ class UploadTask {
         'intentos': intentos,
         'creadoEn': creadoEn.toIso8601String(),
         'ultimoError': ultimoError,
+        'proximoIntento': proximoIntento?.toIso8601String(),
       };
 
   factory UploadTask.fromJson(Map<String, dynamic> json) {
@@ -81,6 +84,7 @@ class UploadTask {
       creadoEn:
           DateTime.tryParse(json['creadoEn']?.toString() ?? '') ?? DateTime.now(),
       ultimoError: json['ultimoError']?.toString(),
+      proximoIntento: DateTime.tryParse(json['proximoIntento']?.toString() ?? ''),
     );
   }
 }

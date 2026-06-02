@@ -151,10 +151,11 @@ class DocumentoArchivoService extends GetxService {
   // ── helpers ────────────────────────────────────────────────────────────
 
   DocException _toException(http.Response resp) {
+    final body = utf8.decode(resp.bodyBytes, allowMalformed: true);
     return DocException(
       resp.statusCode,
-      _extraerCode(resp.body),
-      resp.body,
+      _extraerCode(body),
+      body,
     );
   }
 

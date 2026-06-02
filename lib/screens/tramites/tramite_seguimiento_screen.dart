@@ -8,6 +8,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../models/documento_archivo_model.dart';
 import '../../models/tramite_estado_model.dart';
 import '../../models/flujo_completo_model.dart';
@@ -239,6 +240,26 @@ class _TramiteSeguimientoScreenState extends State<TramiteSeguimientoScreen> {
   bool get _esCerrado =>
       tramitesSeguimientoService.esEstadoTerminal(estado!.estado);
 
+  /// Abre el documento de resolución entregable del trámite (URL firmada).
+  Future<void> _descargarResolucion() async {
+    try {
+      final res = await tramitesSeguimientoService.obtenerResolucion(tramiteId);
+      final url = res?['url'] as String?;
+      if (url == null || url.isEmpty) {
+        Get.snackbar('Resolución', 'Este trámite aún no tiene documento de resolución.');
+        return;
+      }
+      final uri = Uri.parse(url);
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      } else {
+        Get.snackbar('Resolución', 'No se pudo abrir el documento.');
+      }
+    } catch (e) {
+      Get.snackbar('Error', 'No se pudo obtener la resolución del trámite.');
+    }
+  }
+
   Widget _buildCardEstadoGeneral(BuildContext context) {
     final color = tramitesSeguimientoService.getColorEstadoFlutter(estado!.estado);
     final progreso = _progresoEfectivo;
@@ -340,26 +361,43 @@ class _TramiteSeguimientoScreenState extends State<TramiteSeguimientoScreen> {
                   border: Border.all(color: color.withOpacity(0.4)),
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: Row(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Icon(
-                      estado!.estado == 'Rechazado' || estado!.estado == 'rechazado'
-                          ? Icons.cancel_outlined
-                          : Icons.check_circle_outline,
-                      color: color,
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        'Trámite ${tramitesSeguimientoService.getTextoEstado(estado!.estado)}',
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
+                    Row(
+                      children: [
+                        Icon(
+                          tramitesSeguimientoService.esAprobado(estado!.estado)
+                              ? Icons.check_circle_outline
+                              : Icons.cancel_outlined,
                           color: color,
                         ),
-                        overflow: TextOverflow.ellipsis,
-                        maxLines: 1,
-                      ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            'Trámite ${tramitesSeguimientoService.getTextoEstado(estado!.estado)}',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: color,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                            maxLines: 1,
+                          ),
+                        ),
+                      ],
                     ),
+                    // Descargar el documento de resolución (solo trámites aprobados)
+                    if (tramitesSeguimientoService.esAprobado(estado!.estado)) ...[
+                      const SizedBox(height: 10),
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          onPressed: _descargarResolucion,
+                          icon: const Icon(Icons.download),
+                          label: const Text('Descargar resolución'),
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               )
@@ -950,13 +988,19 @@ class _TramiteSeguimientoScreenState extends State<TramiteSeguimientoScreen> {
   Color _colorPorEstadoNodo(FlujoNodo nodo) {
     if (nodo.esActual) return Colors.amber.shade700;
     switch (nodo.estadoSeccion) {
+      case 'Derivada':
       case 'completada':
       case 'completado':
         return Colors.green;
+      case 'En ejecucion':
       case 'en_curso':
         return Colors.blue;
+      case 'Pendiente de recepcion':
+        return Colors.lightBlue;
+      case 'Observado':
       case 'observado':
         return Colors.orange;
+      case 'Bloqueada':
       case 'bloqueada':
       default:
         return Colors.grey;
@@ -977,10 +1021,16 @@ class _TramiteSeguimientoScreenState extends State<TramiteSeguimientoScreen> {
         return Icons.call_merge;
       default:
         switch (nodo.estadoSeccion) {
+          case 'Derivada':
           case 'completada':
+          case 'completado':
             return Icons.check;
+          case 'En ejecucion':
           case 'en_curso':
             return Icons.edit;
+          case 'Pendiente de recepcion':
+            return Icons.inbox;
+          case 'Observado':
           case 'observado':
             return Icons.warning;
           default:
@@ -992,13 +1042,19 @@ class _TramiteSeguimientoScreenState extends State<TramiteSeguimientoScreen> {
   String _textoEstadoNodo(FlujoNodo nodo) {
     if (nodo.esActual) return 'ACTUAL';
     switch (nodo.estadoSeccion) {
+      case 'Derivada':
       case 'completada':
       case 'completado':
-        return 'COMPLETADA';
+        return 'DERIVADA';
+      case 'En ejecucion':
       case 'en_curso':
-        return 'EN CURSO';
+        return 'EN EJECUCIÓN';
+      case 'Pendiente de recepcion':
+        return 'EN BANDEJA';
+      case 'Observado':
       case 'observado':
         return 'OBSERVADO';
+      case 'Bloqueada':
       case 'bloqueada':
       default:
         return 'PENDIENTE';
@@ -1168,10 +1224,18 @@ class _TramiteSeguimientoScreenState extends State<TramiteSeguimientoScreen> {
 
   Color _getColorSeccion(String estado) {
     switch (estado) {
+      case 'Derivada':
       case 'completada':
         return Colors.green;
+      case 'En ejecucion':
       case 'en_curso':
         return Colors.blue;
+      case 'Pendiente de recepcion':
+        return Colors.lightBlue;
+      case 'Observado':
+      case 'observado':
+        return Colors.orange;
+      case 'Bloqueada':
       case 'bloqueada':
         return Colors.grey;
       default:
@@ -1181,6 +1245,12 @@ class _TramiteSeguimientoScreenState extends State<TramiteSeguimientoScreen> {
 
   String _getTextoSeccion(String estado) {
     const textos = {
+      'Derivada': 'Derivada',
+      'En ejecucion': 'En ejecución',
+      'Pendiente de recepcion': 'Pendiente de recepción',
+      'Observado': 'Observado',
+      'Bloqueada': 'Bloqueada',
+      // legacy
       'completada': 'Completada',
       'en_curso': 'En Curso',
       'bloqueada': 'Bloqueada',

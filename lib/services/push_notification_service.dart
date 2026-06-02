@@ -12,6 +12,7 @@
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:get/get.dart';
@@ -33,6 +34,9 @@ class PushNotificationService extends GetxService {
   http.Client? _sseClient;
   StreamSubscription<String>? _sseSub;
   bool _sseConectado = false;
+  bool _conectando = false;
+  bool _detenido = false;
+  int _intentosReconexion = 0;
   final Set<String> _yaNotificadas = <String>{};
   bool _inicializado = false;
 
@@ -86,6 +90,7 @@ class PushNotificationService extends GetxService {
 
   /// Arranca SSE + polling de respaldo. Llamar tras login.
   void iniciarPolling({Duration intervalo = _pollRapido}) {
+    _detenido = false;
     _conectarSse();
     _poll?.cancel();
     _verificar();
@@ -93,36 +98,47 @@ class PushNotificationService extends GetxService {
   }
 
   void detenerPolling() {
+    _detenido = true;
     _poll?.cancel();
     _poll = null;
     _reconectarSse?.cancel();
     _reconectarSse = null;
     _cerrarSse();
     _yaNotificadas.clear();
+    _intentosReconexion = 0;
+    _conectando = false;
   }
 
   // ── SSE ──────────────────────────────────────────────────────────────────
 
   Future<void> _conectarSse() async {
-    if (_sseConectado) return;
-    final token = _auth.getToken();
-    if (token == null || token.isEmpty) return;
-
-    final url = Uri.parse('${Environment.apiUrl}/notificaciones/stream');
-    final req = http.Request('GET', url)
-      ..headers['Authorization'] = 'Bearer $token'
-      ..headers['Accept'] = 'text/event-stream'
-      ..headers['Cache-Control'] = 'no-cache';
-
-    final client = http.Client();
-    _sseClient = client;
+    if (_sseConectado || _conectando) return;
+    _conectando = true;
     try {
+      final token = _auth.getToken();
+      if (token == null || token.isEmpty) return;
+
+      final url = Uri.parse('${Environment.apiUrl}/notificaciones/stream');
+      final req = http.Request('GET', url)
+        ..headers['Authorization'] = 'Bearer $token'
+        ..headers['Accept'] = 'text/event-stream'
+        ..headers['Cache-Control'] = 'no-cache';
+
+      final client = http.Client();
+      _sseClient?.close();
+      _sseClient = client;
       final response = await client.send(req);
+      if (_detenido) {
+        // detenerPolling() corrió mientras esperábamos: no resucitar la conexión.
+        client.close();
+        return;
+      }
       if (response.statusCode != 200) {
         _sobreErrorSse('http ${response.statusCode}');
         return;
       }
       _sseConectado = true;
+      _intentosReconexion = 0;
       _ajustarRitmoPolling();
       String evento = 'message';
       final buffer = StringBuffer();
@@ -157,6 +173,8 @@ class PushNotificationService extends GetxService {
       );
     } catch (e) {
       _sobreErrorSse(e.toString());
+    } finally {
+      _conectando = false;
     }
   }
 
@@ -180,14 +198,17 @@ class PushNotificationService extends GetxService {
   }
 
   void _sobreErrorSse(String motivo) {
+    if (_detenido) return;
     if (_sseConectado) {
       _sseConectado = false;
       _ajustarRitmoPolling();
     }
     _cerrarSse();
-    // Reintenta con backoff (5 s, 10 s, 20 s…) limitado a 30 s.
+    // Reintenta con backoff exponencial (5 s, 10 s, 20 s…) limitado a 30 s.
     _reconectarSse?.cancel();
-    _reconectarSse = Timer(const Duration(seconds: 5), _conectarSse);
+    final segs = (5 * pow(2, _intentosReconexion)).clamp(5, 30).toInt();
+    _intentosReconexion++;
+    _reconectarSse = Timer(Duration(seconds: segs), _conectarSse);
   }
 
   void _cerrarSse() {

@@ -20,7 +20,7 @@ class _MisTramitesScreenState extends State<MisTramitesScreen> {
   String busqueda = '';
 
   final List<String> estadosDisponibles = [
-    'En proceso', 'Aprobado', 'Rechazado', 'Cancelado', 'Observado', 'Derivado',
+    'En curso', 'Observado', 'Aprobado', 'Rechazado', 'Cancelado',
   ];
 
   @override

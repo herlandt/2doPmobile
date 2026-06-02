@@ -43,7 +43,7 @@ class TramitesService extends GetxService {
       print('   Status: ${response.statusCode}');
 
       if (response.statusCode == 200) {
-        final List<dynamic> data = jsonDecode(response.body);
+        final List<dynamic> data = jsonDecode(utf8.decode(response.bodyBytes));
         politicas.value =
             data.map((e) => Politica.fromJson(e as Map<String, dynamic>)).toList();
 
@@ -77,7 +77,7 @@ class TramitesService extends GetxService {
       print('   Status: ${response.statusCode}');
 
       if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
+        final data = jsonDecode(utf8.decode(response.bodyBytes));
         politicaActual.value = Politica.fromJson(data);
         print('✅ Política cargada: ${politicaActual.value?.nombre}');
         return politicaActual.value!;
@@ -104,7 +104,7 @@ class TramitesService extends GetxService {
       ).timeout(const Duration(seconds: 10));
 
       if (response.statusCode == 200) {
-        final List<dynamic> data = jsonDecode(response.body);
+        final List<dynamic> data = jsonDecode(utf8.decode(response.bodyBytes));
         actividades.value = data
             .map((e) => Actividad.fromJson(e as Map<String, dynamic>))
             .toList();
@@ -131,7 +131,7 @@ class TramitesService extends GetxService {
       ).timeout(const Duration(seconds: 10));
 
       if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
+        final data = jsonDecode(utf8.decode(response.bodyBytes));
         print('✅ Actividad cargada');
         return Actividad.fromJson(data);
       } else {
@@ -154,7 +154,7 @@ class TramitesService extends GetxService {
       ).timeout(const Duration(seconds: 10));
 
       if (response.statusCode == 200) {
-        final List<dynamic> data = jsonDecode(response.body);
+        final List<dynamic> data = jsonDecode(utf8.decode(response.bodyBytes));
         departamentos.value = data
             .map((e) => Departamento.fromJson(e as Map<String, dynamic>))
             .toList();
@@ -181,7 +181,7 @@ class TramitesService extends GetxService {
       ).timeout(const Duration(seconds: 10));
 
       if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
+        final data = jsonDecode(utf8.decode(response.bodyBytes));
         print('✅ Departamento cargado');
         return Departamento.fromJson(data);
       } else {

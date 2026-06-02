@@ -123,11 +123,12 @@ class ExpedienteInfo {
   ExpedienteInfo({required this.id, required this.secciones});
 
   factory ExpedienteInfo.fromJson(Map<String, dynamic> json) {
+    final sec = json['secciones'];
     return ExpedienteInfo(
       id: json['id'] ?? '',
-      secciones: json['secciones'] != null
+      secciones: sec is List
           ? List<SeccionEstado>.from(
-              (json['secciones'] as List).map((s) => SeccionEstado.fromJson(s)),
+              sec.map((s) => SeccionEstado.fromJson(s)),
             )
           : [],
     );
@@ -164,6 +165,8 @@ class EstadoTramite {
         ? progresoRaw.toInt()
         : int.tryParse(progresoRaw?.toString() ?? '') ?? 0;
 
+    final hist = json['historial'];
+
     return EstadoTramite(
       tramiteId: json['tramiteId'] ?? json['id'] ?? '',
       codigo: json['codigo'] ?? '',
@@ -174,9 +177,9 @@ class EstadoTramite {
       expediente: json['expediente'] != null
           ? ExpedienteInfo.fromJson(json['expediente'])
           : ExpedienteInfo(id: '', secciones: []),
-      historial: json['historial'] != null
+      historial: hist is List
           ? List<EventoHistorico>.from(
-              (json['historial'] as List).map(
+              hist.map(
                 (h) => EventoHistorico.fromJson(h),
               ),
             )

@@ -22,7 +22,7 @@ class HttpClientService {
         headers: authService.getHeaders(),
       ).timeout(const Duration(seconds: 30));
 
-      _handleResponse(response);
+      await _handleResponse(response);
       return response;
     } catch (e) {
       rethrow;
@@ -41,7 +41,7 @@ class HttpClientService {
         body: body,
       ).timeout(const Duration(seconds: 30));
 
-      _handleResponse(response);
+      await _handleResponse(response);
       return response;
     } catch (e) {
       rethrow;
@@ -60,7 +60,7 @@ class HttpClientService {
         body: body,
       ).timeout(const Duration(seconds: 30));
 
-      _handleResponse(response);
+      await _handleResponse(response);
       return response;
     } catch (e) {
       rethrow;
@@ -75,7 +75,7 @@ class HttpClientService {
         headers: authService.getHeaders(),
       ).timeout(const Duration(seconds: 30));
 
-      _handleResponse(response);
+      await _handleResponse(response);
       return response;
     } catch (e) {
       rethrow;
@@ -83,11 +83,12 @@ class HttpClientService {
   }
 
   /// Manejar respuesta HTTP
-  void _handleResponse(http.Response response) {
+  Future<void> _handleResponse(http.Response response) async {
     if (response.statusCode == 401) {
       // Token expirado o inválido
-      authService.logout();
+      await authService.logout();
       Get.offNamed('/login');
+      throw Exception('Sesión expirada');
     } else if (response.statusCode >= 500) {
       throw Exception('Error del servidor: ${response.statusCode}');
     }

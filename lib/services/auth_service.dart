@@ -1,5 +1,6 @@
 import 'package:get/get.dart';
 import 'package:http/http.dart' as http;
+import 'dart:async';
 import 'dart:convert';
 import '../config/environment.dart';
 import '../models/auth_model.dart';
@@ -47,7 +48,7 @@ class AuthService extends GetxService {
       print('📄 Respuesta de login recibida');
 
       if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
+        final data = jsonDecode(utf8.decode(response.bodyBytes));
         final loginResponse = LoginResponse.fromJson(data);
 
         // Guardar token
@@ -58,17 +59,28 @@ class AuthService extends GetxService {
           final usuario = Usuario.fromJson(data['usuario']);
           usuarioActual.value = usuario;
           await storageService.saveUserData(jsonEncode(usuario.toJson()));
+          isAuthenticated.value = true;
         } else {
-          // Si el backend no devuelve el usuario embebido, cargarlo con el token ya guardado.
-          await obtenerDatosUsuario();
+          // El backend no embebe el usuario: cargarlo con el token ya guardado.
+          // Si falla (red caída), NO dejamos sesión a medias (autenticado sin usuario).
+          final usuario = await obtenerDatosUsuario();
+          if (usuario == null) {
+            // Borramos el token ya guardado para no dejar sesión a medias
+            // (token residual reusado en el próximo arranque).
+            await logout();
+            throw Exception(
+              'No se pudo cargar el perfil. Verifica tu conexión e intenta de nuevo.',
+            );
+          }
+          // obtenerDatosUsuario ya marcó isAuthenticated=true al cargar el usuario.
         }
 
-        isAuthenticated.value = true;
         print('✅ Login exitoso, token guardado');
         return loginResponse;
       } else {
         final errorMsg =
-            jsonDecode(response.body)['message'] ?? 'Error al iniciar sesión';
+            jsonDecode(utf8.decode(response.bodyBytes))['message'] ??
+                'Error al iniciar sesión';
         print('❌ Error: $errorMsg');
         throw Exception(errorMsg);
       }
@@ -87,18 +99,21 @@ class AuthService extends GetxService {
         throw Exception('Las contraseñas no coinciden');
       }
 
-      final response = await http.post(
-        Uri.parse('$_apiUrl/register-cliente'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode(request.toJson()),
-      );
+      final response = await http
+          .post(
+            Uri.parse('$_apiUrl/register-cliente'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode(request.toJson()),
+          )
+          .timeout(const Duration(seconds: 10));
 
       if (response.statusCode == 201 || response.statusCode == 200) {
-        final data = jsonDecode(response.body);
+        final data = jsonDecode(utf8.decode(response.bodyBytes));
         return RegisterResponse.fromJson(data);
       } else {
         throw Exception(
-          jsonDecode(response.body)['message'] ?? 'Error al registrarse',
+          jsonDecode(utf8.decode(response.bodyBytes))['message'] ??
+              'Error al registrarse',
         );
       }
     } catch (e) {
@@ -115,16 +130,18 @@ class AuthService extends GetxService {
         return null;
       }
 
-      final response = await http.get(
-        Uri.parse('${Environment.apiUrl}/usuarios/me'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $token',
-        },
-      );
+      final response = await http
+          .get(
+            Uri.parse('${Environment.apiUrl}/usuarios/me'),
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer $token',
+            },
+          )
+          .timeout(const Duration(seconds: 10));
 
       if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
+        final data = jsonDecode(utf8.decode(response.bodyBytes));
         final usuario = Usuario.fromJson(data);
         usuarioActual.value = usuario;
         await storageService.saveUserData(jsonEncode(usuario.toJson()));
@@ -138,6 +155,9 @@ class AuthService extends GetxService {
         throw Exception('Error al obtener datos del usuario');
       }
     } catch (e) {
+      // Error de red (timeout/conexión): no borramos la sesión ni el token,
+      // pero evitamos quedar autenticados sin usuario cargado.
+      isAuthenticated.value = false;
       return null;
     }
   }
@@ -170,7 +190,8 @@ class AuthService extends GetxService {
       print('🔄 Intentando restaurar sesión...');
       if (storageService.hasToken()) {
         print('✅ Token encontrado en storage');
-        isAuthenticated.value = true;
+        // No marcamos isAuthenticated=true a ciegas: obtenerDatosUsuario()
+        // lo pone en true solo tras un 200 con el usuario cargado.
         await obtenerDatosUsuario();
         print('✅ Sesión restaurada');
       } else {

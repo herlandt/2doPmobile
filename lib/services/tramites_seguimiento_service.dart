@@ -28,7 +28,7 @@ class TramitesSeguimientoService extends GetxService {
   }
 
   /// Obtener lista de mis trámites
-  /// Endpoint: GET /api/workflow/mis-tramites
+  /// Endpoint: GET /api/tramites/mis-tramites
   Future<List<TramiteResumen>> obtenerMisTramites() async {
     print('📋 Obteniendo mis trámites...');
 
@@ -45,7 +45,7 @@ class TramitesSeguimientoService extends GetxService {
       print('📥 Response: ${response.statusCode}');
 
       if (response.statusCode == 200) {
-        final List<dynamic> jsonList = jsonDecode(response.body);
+        final List<dynamic> jsonList = jsonDecode(utf8.decode(response.bodyBytes));
         misTramites.value = jsonList.map((j) => TramiteResumen.fromJson(j)).toList();
         print('✅ ${misTramites.length} trámites cargados');
         return misTramites;
@@ -62,7 +62,7 @@ class TramitesSeguimientoService extends GetxService {
   }
 
   /// Obtener estado detallado de un trámite
-  /// Endpoint: GET /api/workflow/{tramiteId}/estado
+  /// Endpoint: GET /api/tramites/{tramiteId}/estado
   Future<EstadoTramite> obtenerEstadoTramite(String tramiteId) async {
     print('📊 Obteniendo estado del trámite: $tramiteId');
 
@@ -79,7 +79,7 @@ class TramitesSeguimientoService extends GetxService {
       print('📥 Response: ${response.statusCode}');
 
       if (response.statusCode == 200) {
-        estadoActual.value = EstadoTramite.fromJson(jsonDecode(response.body));
+        estadoActual.value = EstadoTramite.fromJson(jsonDecode(utf8.decode(response.bodyBytes)));
         print('✅ Estado cargado: ${estadoActual.value?.estado}');
         return estadoActual.value!;
       } else {
@@ -110,7 +110,7 @@ class TramitesSeguimientoService extends GetxService {
       print('📥 Response flujo: ${response.statusCode}');
 
       if (response.statusCode == 200) {
-        return FlujoCompleto.fromJson(jsonDecode(response.body));
+        return FlujoCompleto.fromJson(jsonDecode(utf8.decode(response.bodyBytes)));
       } else {
         throw Exception('Error al obtener flujo (HTTP ${response.statusCode})');
       }
@@ -124,48 +124,76 @@ class TramitesSeguimientoService extends GetxService {
   int calcularProgreso(EstadoTramite estado) {
     if (estado.expediente.secciones.isEmpty) return 0;
 
-    final completadas =
-        estado.expediente.secciones.where((s) => s.estado == 'completada').length;
+    final completadas = estado.expediente.secciones
+        .where((s) => _seccionCompletada(s.estado))
+        .length;
     final progreso = (completadas / estado.expediente.secciones.length * 100).round();
 
     return progreso;
   }
 
-  /// True si el trámite está en un estado terminal (ya no avanza)
-  bool esEstadoTerminal(String estado) {
-    const terminales = {
-      'Aprobado', 'Rechazado', 'Cancelado',
-      'completado', 'archivado', 'rechazado',
-    };
-    return terminales.contains(estado);
+  /// True si el estado de una SECCIÓN indica que ya quedó finalizada,
+  /// replicando la tolerancia del backend EstadoSeccion.from
+  /// (capitalización/acentos/legacy). Distinto de _canonico, que es para el
+  /// estado de TRÁMITE; aquí no se contamina la semántica de progreso.
+  bool _seccionCompletada(String estado) {
+    final s = estado.trim().toLowerCase();
+    return s.startsWith('derivad') || s.startsWith('complet');
   }
 
-  /// Progreso efectivo: 100 % para aprobados, real para el resto
+  /// Normaliza un estado a una clave canónica en minúsculas, mapeando alias
+  /// (backend nuevo, backend legacy y variantes) a un conjunto reducido de
+  /// claves: aprobado, rechazado, cancelado, observado, en_curso, nuevo,
+  /// borrador. Si no hay alias conocido devuelve el estado normalizado tal cual.
+  String _canonico(String estado) {
+    final s = estado.trim().toLowerCase();
+    const alias = {
+      'aprobado': 'aprobado',
+      'completado': 'aprobado',
+      'rechazado': 'rechazado',
+      'cancelado': 'cancelado',
+      'archivado': 'cancelado',
+      'observado': 'observado',
+      'devuelto': 'observado',
+      'en curso': 'en_curso',
+      'en proceso': 'en_curso',
+      'derivado': 'en_curso',
+      'activo': 'en_curso',
+      'en_progreso': 'en_curso',
+      'nuevo': 'nuevo',
+      'borrador': 'borrador',
+    };
+    return alias[s] ?? s;
+  }
+
+  /// True si el trámite está en un estado terminal (ya no avanza)
+  bool esEstadoTerminal(String estado) {
+    const terminales = {'aprobado', 'rechazado', 'cancelado'};
+    return terminales.contains(_canonico(estado));
+  }
+
+  /// True si el trámite culminó con éxito (aprobado), normalizando alias.
+  bool esAprobado(String estado) => _canonico(estado) == 'aprobado';
+
+  /// Progreso efectivo: 100 % solo para aprobados (éxito). Rechazado/Cancelado
+  /// conservan su progreso real (no se muestran al 100 %).
   int progresoEfectivo(int progresoBackend, String estado) {
-    if (estado == 'Aprobado' || estado == 'completado') return 100;
-    if (esEstadoTerminal(estado) && progresoBackend == 0) return 100;
+    if (_canonico(estado) == 'aprobado') return 100;
     return progresoBackend;
   }
 
   /// Color Flutter según estado del trámite
   Color getColorEstadoFlutter(String estado) {
-    switch (estado) {
-      case 'Aprobado':
-      case 'completado':
+    switch (_canonico(estado)) {
+      case 'aprobado':
         return Colors.green;
-      case 'Rechazado':
       case 'rechazado':
         return Colors.red;
-      case 'Cancelado':
-      case 'archivado':
+      case 'cancelado':
         return Colors.grey;
-      case 'Observado':
-      case 'Devuelto':
+      case 'observado':
         return Colors.orange;
-      case 'En proceso':
-      case 'Derivado':
-      case 'activo':
-      case 'en_progreso':
+      case 'en_curso':
         return Colors.blue;
       default:
         return Colors.blueGrey;
@@ -188,46 +216,41 @@ class TramitesSeguimientoService extends GetxService {
   /// Obtener icono según estado
   String getIconoEstado(String estado) {
     const iconos = {
-      // Estados backend
-      'Aprobado': '✅',
-      'Rechazado': '❌',
-      'Cancelado': '🚫',
-      'En proceso': '⏳',
-      'Derivado': '↗️',
-      'Observado': '⚠️',
-      'Devuelto': '↩️',
-      'Nuevo': '🆕',
-      // Estados legacy
-      'borrador': '📝',
-      'en_progreso': '⏳',
-      'completado': '✅',
-      'archivado': '📦',
+      'aprobado': '✅',
       'rechazado': '❌',
+      'cancelado': '🚫',
+      'en_curso': '⏳',
+      'observado': '⚠️',
+      'nuevo': '🆕',
+      'borrador': '📝',
     };
-    return iconos[estado] ?? '•';
+    return iconos[_canonico(estado)] ?? '•';
   }
 
   /// Obtener texto legible del estado
   String getTextoEstado(String estado) {
-    const textos = {
-      // Estados backend reales
-      'Aprobado': 'Aprobado',
-      'Rechazado': 'Rechazado',
-      'Cancelado': 'Cancelado',
-      'En proceso': 'En Proceso',
-      'Derivado': 'Derivado',
-      'Observado': 'Observado',
-      'Devuelto': 'Devuelto',
-      'Nuevo': 'Nuevo',
-      // Estados legacy
-      'borrador': 'Borrador',
-      'activo': 'En Proceso',
-      'en_progreso': 'En Proceso',
-      'completado': 'Completado',
-      'archivado': 'Archivado',
+    // Texto por clave canónica (modelo nuevo y legacy convergen aquí)
+    const textosCanonicos = {
+      'en_curso': 'En curso',
+      'observado': 'Observado',
+      'aprobado': 'Aprobado',
       'rechazado': 'Rechazado',
+      'cancelado': 'Cancelado',
+      'nuevo': 'Nuevo',
+      'borrador': 'Borrador',
     };
-    return textos[estado] ?? estado;
+    final canonico = _canonico(estado);
+    final texto = textosCanonicos[canonico];
+    if (texto != null) return texto;
+
+    // Estados de sección (por si se reutiliza el mapeo); no tienen clave
+    // canónica de trámite, se resuelven por su valor original.
+    const textosSeccion = {
+      'Pendiente de recepcion': 'Pendiente de recepción',
+      'En ejecucion': 'En ejecución',
+      'Derivada': 'Derivada',
+    };
+    return textosSeccion[estado] ?? estado;
   }
 
   /// Limpiar estado actual
@@ -237,6 +260,24 @@ class TramitesSeguimientoService extends GetxService {
   }
 
   // ─── C2: Expediente y Subsanación ────────────────────────────────────────
+
+  /// Descargar el documento de resolución del trámite finalizado.
+  /// Endpoint: GET /api/tramites/{tramiteId}/resolucion → { url, mimeType, ... }
+  /// Devuelve null si el trámite aún no tiene resolución (404).
+  Future<Map<String, dynamic>?> obtenerResolucion(String tramiteId) async {
+    final response = await http
+        .get(
+          Uri.parse('$_baseUrl/tramites/$tramiteId/resolucion'),
+          headers: authService.getHeaders(),
+        )
+        .timeout(const Duration(seconds: 10));
+
+    if (response.statusCode == 200) {
+      return json.decode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
+    }
+    if (response.statusCode == 404) return null;
+    throw Exception('No se pudo obtener la resolución del trámite');
+  }
 
   /// C2 CU-17: Obtener expediente completo de un trámite
   /// Endpoint: GET /api/expedientes/tramite/{tramiteId}
@@ -257,17 +298,23 @@ class TramitesSeguimientoService extends GetxService {
   }
 
   /// C2 CU-17: Enviar corrección completando la sección activa del expediente
-  /// Flujo: obtiene el expediente → localiza sección 'en_curso' → POST /completar
+  /// Flujo: obtiene el expediente → localiza la sección a subsanar (Observado /
+  /// En ejecución / Pendiente de recepción) → POST /completar.
   Future<void> enviarCorreccion(String tramiteId, String notas) async {
     print('✏️ Enviando corrección para trámite: $tramiteId');
 
     final expediente = await getExpediente(tramiteId);
     final secciones = expediente['secciones'] as List<dynamic>? ?? [];
 
+    const estadosCorregibles = {
+      'Observado', 'En ejecucion', 'Pendiente de recepcion',
+      // legacy
+      'observado', 'en_curso',
+    };
     final seccionActiva = secciones.firstWhere(
       (s) {
         final info = s['infoSeccion'] as Map<String, dynamic>?;
-        return info?['estado'] == 'en_curso';
+        return estadosCorregibles.contains(info?['estado']);
       },
       orElse: () => null,
     );

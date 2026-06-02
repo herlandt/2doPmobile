@@ -22,9 +22,11 @@ class Politica {
 
   factory Politica.fromJson(Map<String, dynamic> json) {
     return Politica(
-      id: json['id'] as String,
-      nombre: json['nombre'] as String,
-      descripcion: json['descripcion'] as String,
+      // M1: null-safe — un registro con id/nombre/descripcion null o ausente
+      // ya no rompe el .map() de toda la lista (catálogo vacío).
+      id: json['id']?.toString() ?? '',
+      nombre: json['nombre']?.toString() ?? '',
+      descripcion: json['descripcion']?.toString() ?? '',
       estado: json['estado'] as String? ?? 'activa',
       duracionDiasLimite: json['duracionDiasLimite'] as int? ?? 0,
       requiereAprobacion: json['requiereAprobacion'] as bool? ?? false,
@@ -84,8 +86,9 @@ class ActividadDocumentos {
 
   factory ActividadDocumentos.fromJson(Map<String, dynamic> json) {
     return ActividadDocumentos(
-      actividadId: json['actividadId'] as String,
-      actividadNombre: json['actividadNombre'] as String,
+      // M1: null-safe (mismo motivo que en Politica.fromJson).
+      actividadId: json['actividadId']?.toString() ?? '',
+      actividadNombre: json['actividadNombre']?.toString() ?? '',
       documentosRequeridos: List<String>.from(json['documentosRequeridos'] as List? ?? []),
     );
   }
