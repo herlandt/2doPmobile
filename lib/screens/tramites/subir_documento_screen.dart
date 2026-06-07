@@ -3,11 +3,19 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../controllers/network_controller.dart';
+import '../../models/flujo_completo_model.dart';
 import '../../services/adjuntos_service.dart';
 import '../../services/upload_queue_service.dart';
+import '../../theme/app_theme.dart';
+import '../../widgets/ui_kit.dart';
 
 /// Argumentos esperados via Get.arguments:
 /// { tramiteId, actividadId, actividadNombre, documentoNombre }
+/// Compuerta de documentos (opcionales):
+///   - documentoRequeridoId: si viene, el documento se asocia directo a ese
+///     requisito (no se muestra dropdown).
+///   - requisitosCliente: `List<DocumentoRequerido>` del nodo (proveedor CLIENTE)
+///     para que, si no llegó un documentoRequeridoId, el cliente elija cuál cumple.
 class SubirDocumentoScreen extends StatefulWidget {
   const SubirDocumentoScreen({Key? key}) : super(key: key);
 
@@ -19,11 +27,16 @@ class _SubirDocumentoScreenState extends State<SubirDocumentoScreen> {
   late AdjuntosService adjuntosService;
   late UploadQueueService colaSvc;
   late NetworkController network;
+  late Map<String, dynamic> _rawArgs;
   late Map<String, String> args;
 
   File? _imagenSeleccionada;
   bool _subiendo = false;
   final ImagePicker _picker = ImagePicker();
+
+  // Compuerta de documentos: requisito que cumple esta subida.
+  List<DocumentoRequerido> _requisitosCliente = const [];
+  String? _documentoRequeridoId;
 
   @override
   void initState() {
@@ -31,7 +44,23 @@ class _SubirDocumentoScreenState extends State<SubirDocumentoScreen> {
     adjuntosService = Get.find<AdjuntosService>();
     colaSvc = Get.find<UploadQueueService>();
     network = Get.find<NetworkController>();
-    args = Map<String, String>.from(Get.arguments as Map);
+    _rawArgs = Map<String, dynamic>.from(Get.arguments as Map);
+    // Sólo los campos String se exponen como `args` (compatibilidad con el
+    // build previo, que indexa args['...']).
+    args = <String, String>{
+      for (final e in _rawArgs.entries)
+        if (e.value is String) e.key: e.value as String,
+    };
+
+    final reqs = _rawArgs['requisitosCliente'];
+    if (reqs is List) {
+      _requisitosCliente = reqs.whereType<DocumentoRequerido>().toList();
+    }
+    // Si llega un requisito directo, úsalo y no se muestra el dropdown.
+    final directo = _rawArgs['documentoRequeridoId'];
+    if (directo is String && directo.isNotEmpty) {
+      _documentoRequeridoId = directo;
+    }
   }
 
   Future<void> _seleccionarImagen(ImageSource fuente) async {
@@ -58,7 +87,7 @@ class _SubirDocumentoScreenState extends State<SubirDocumentoScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Sin conexión: se subirá cuando vuelva la red.'),
-          backgroundColor: Colors.orange,
+          backgroundColor: AppColors.observado,
         ),
       );
       Get.back(result: true);
@@ -72,12 +101,13 @@ class _SubirDocumentoScreenState extends State<SubirDocumentoScreen> {
         actividadId: args['actividadId']!,
         documentoNombre: args['documentoNombre']!,
         archivo: _imagenSeleccionada!,
+        documentoRequeridoId: _documentoRequeridoId,
       );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Documento subido correctamente'),
-            backgroundColor: Colors.green,
+            backgroundColor: AppColors.exito,
           ),
         );
         Get.back(result: true);
@@ -95,7 +125,7 @@ class _SubirDocumentoScreenState extends State<SubirDocumentoScreen> {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text('Se encoló: se reintentará al volver la conexión.'),
-              backgroundColor: Colors.orange,
+              backgroundColor: AppColors.observado,
             ),
           );
           Get.back(result: true);
@@ -105,8 +135,9 @@ class _SubirDocumentoScreenState extends State<SubirDocumentoScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error al subir: ${e.toString()}'),
-            backgroundColor: Colors.red,
+            content: Text(_mensajeError(e)),
+            backgroundColor: AppColors.peligro,
+            duration: const Duration(seconds: 4),
           ),
         );
       }
@@ -115,15 +146,20 @@ class _SubirDocumentoScreenState extends State<SubirDocumentoScreen> {
     }
   }
 
+  /// Mensaje claro para el usuario a partir del error de subida.
+  String _mensajeError(Object e) {
+    if (e is SubidaException) return e.mensaje;
+    return 'No se pudo subir el documento. Revisa tu conexión e intenta de nuevo.';
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Subir Documento'),
-        elevation: 0,
       ),
       body: Padding(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.all(AppSpacing.md),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -132,58 +168,49 @@ class _SubirDocumentoScreenState extends State<SubirDocumentoScreen> {
               final online = network.hasConnection.value;
               final pendientes = colaSvc.totalPendientes;
               if (online && pendientes == 0) return const SizedBox.shrink();
-              return Container(
-                margin: const EdgeInsets.only(bottom: 12),
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: online
-                      ? Colors.amber.shade50
-                      : Colors.orange.shade50,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(
-                    color: online ? Colors.amber.shade300 : Colors.orange,
-                  ),
-                ),
-                child: Row(
-                  children: [
-                    Icon(
-                      online ? Icons.upload : Icons.cloud_off,
-                      size: 18,
-                      color: online ? Colors.amber.shade900 : Colors.orange.shade800,
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        online
-                            ? '$pendientes subida(s) en cola: se procesan automáticamente.'
-                            : 'Sin conexión. Tu subida se encolará y se enviará cuando vuelva la red.',
-                        style: const TextStyle(fontSize: 12),
+              final color =
+                  online ? AppColors.observado : AppColors.peligro;
+              return Padding(
+                padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+                child: AppCard(
+                  background: color.withOpacity(0.06),
+                  padding: const EdgeInsets.all(AppSpacing.sm),
+                  child: Row(
+                    children: [
+                      Icon(
+                        online ? Icons.upload : Icons.cloud_off,
+                        size: 18,
+                        color: color,
                       ),
-                    ),
-                  ],
+                      const SizedBox(width: AppSpacing.sm),
+                      Expanded(
+                        child: Text(
+                          online
+                              ? '$pendientes subida(s) en cola: se procesan automáticamente.'
+                              : 'Sin conexión. Tu subida se encolará y se enviará cuando vuelva la red.',
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               );
             }),
             // Info del documento
-            Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: Colors.blue.shade50,
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: Colors.blue.shade100),
-              ),
+            AppCard(
+              background: AppColors.compuerta.withOpacity(0.06),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
                     args['actividadNombre'] ?? '',
-                    style: TextStyle(
+                    style: const TextStyle(
                       fontSize: 12,
-                      color: Colors.blue.shade700,
+                      color: AppColors.compuerta,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: AppSpacing.xs),
                   Text(
                     args['documentoNombre'] ?? '',
                     style: const TextStyle(
@@ -194,7 +221,11 @@ class _SubirDocumentoScreenState extends State<SubirDocumentoScreen> {
                 ],
               ),
             ),
-            const SizedBox(height: 24),
+
+            // Compuerta de documentos: si NO llegó un requisito directo y hay
+            // requisitos del cliente, el usuario elige cuál cumple.
+            _buildSelectorRequisito(),
+            const SizedBox(height: AppSpacing.lg),
 
             // Área de previsualización
             Expanded(
@@ -202,18 +233,18 @@ class _SubirDocumentoScreenState extends State<SubirDocumentoScreen> {
                 onTap: () => _mostrarOpciones(),
                 child: Container(
                   decoration: BoxDecoration(
-                    color: Colors.grey.shade100,
-                    borderRadius: BorderRadius.circular(12),
+                    color: AppColors.fondo,
+                    borderRadius: BorderRadius.circular(AppRadius.card),
                     border: Border.all(
                       color: _imagenSeleccionada != null
-                          ? Colors.green.shade300
-                          : Colors.grey.shade300,
+                          ? AppColors.exito
+                          : AppColors.borde,
                       width: 2,
                     ),
                   ),
                   child: _imagenSeleccionada != null
                       ? ClipRRect(
-                          borderRadius: BorderRadius.circular(10),
+                          borderRadius: BorderRadius.circular(AppRadius.card),
                           child: Image.file(
                             _imagenSeleccionada!,
                             fit: BoxFit.contain,
@@ -222,19 +253,30 @@ class _SubirDocumentoScreenState extends State<SubirDocumentoScreen> {
                       : Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Icon(Icons.add_photo_alternate_outlined,
-                                size: 64, color: Colors.grey[400]),
-                            const SizedBox(height: 12),
-                            Text(
+                            Container(
+                              width: 84,
+                              height: 84,
+                              decoration: BoxDecoration(
+                                color: AppColors.primary.withOpacity(0.08),
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(
+                                  Icons.add_photo_alternate_outlined,
+                                  size: 40,
+                                  color: AppColors.primary),
+                            ),
+                            const SizedBox(height: AppSpacing.md),
+                            const Text(
                               'Toca para seleccionar imagen',
-                              style: TextStyle(color: Colors.grey[500], fontSize: 14),
+                              style: TextStyle(
+                                  color: AppColors.textoSuave, fontSize: 14),
                             ),
                           ],
                         ),
                 ),
               ),
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: AppSpacing.md),
 
             // Botones fuente
             Row(
@@ -244,32 +286,25 @@ class _SubirDocumentoScreenState extends State<SubirDocumentoScreen> {
                     onPressed: _subiendo ? null : () => _seleccionarImagen(ImageSource.camera),
                     icon: const Icon(Icons.camera_alt),
                     label: const Text('Cámara'),
-                    style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                    ),
                   ),
                 ),
-                const SizedBox(width: 12),
+                const SizedBox(width: AppSpacing.sm),
                 Expanded(
                   child: OutlinedButton.icon(
                     onPressed: _subiendo ? null : () => _seleccionarImagen(ImageSource.gallery),
                     icon: const Icon(Icons.photo_library),
                     label: const Text('Galería'),
-                    style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                    ),
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: AppSpacing.sm),
 
             // Botón subir
             ElevatedButton(
               onPressed: (_imagenSeleccionada == null || _subiendo) ? null : _subir,
               style: ElevatedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                backgroundColor: Colors.green,
+                backgroundColor: AppColors.exito,
               ),
               child: _subiendo
                   ? const SizedBox(
@@ -284,6 +319,42 @@ class _SubirDocumentoScreenState extends State<SubirDocumentoScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  /// Dropdown para elegir QUÉ requisito del cliente cumple esta subida.
+  /// Sólo aparece cuando NO llegó un `documentoRequeridoId` directo en los args
+  /// y hay requisitos del cliente disponibles.
+  Widget _buildSelectorRequisito() {
+    final directo = _rawArgs['documentoRequeridoId'];
+    final llegoDirecto = directo is String && directo.isNotEmpty;
+    if (llegoDirecto || _requisitosCliente.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    return Padding(
+      padding: const EdgeInsets.only(top: AppSpacing.md),
+      child: DropdownButtonFormField<String>(
+        value: _documentoRequeridoId,
+        isExpanded: true,
+        decoration: const InputDecoration(
+          labelText: '¿Qué requisito cumple este documento?',
+          prefixIcon: Icon(Icons.rule),
+        ),
+        items: _requisitosCliente
+            .map(
+              (r) => DropdownMenuItem<String>(
+                value: r.id,
+                child: Text(
+                  r.obligatorio ? '${r.nombre} (obligatorio)' : r.nombre,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            )
+            .toList(),
+        onChanged: _subiendo
+            ? null
+            : (v) => setState(() => _documentoRequeridoId = v),
       ),
     );
   }

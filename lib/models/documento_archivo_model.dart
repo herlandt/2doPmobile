@@ -7,6 +7,7 @@ class DocumentoArchivo {
   final String tramiteId;
   final String actividadId;
   final String? nodoId;
+  final String? documentoRequeridoId;
   final String nombreLogico;
   final String tipoDocumento;
   final bool obligatorio;
@@ -23,6 +24,7 @@ class DocumentoArchivo {
     required this.tramiteId,
     required this.actividadId,
     this.nodoId,
+    this.documentoRequeridoId,
     required this.nombreLogico,
     required this.tipoDocumento,
     required this.obligatorio,
@@ -41,6 +43,7 @@ class DocumentoArchivo {
       tramiteId: json['tramiteId']?.toString() ?? '',
       actividadId: json['actividadId']?.toString() ?? '',
       nodoId: json['nodoId']?.toString(),
+      documentoRequeridoId: json['documentoRequeridoId']?.toString(),
       nombreLogico: json['nombreLogico']?.toString() ?? '',
       tipoDocumento: json['tipoDocumento']?.toString() ?? 'OTRO',
       obligatorio: json['obligatorio'] == true,

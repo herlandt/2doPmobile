@@ -1,4 +1,6 @@
-// C2 Guía 2F — Lista de Trámites Devueltos/Observados (CU-17 cliente)
+// UX — Lista de Trámites que AVANZARON y piden documentos NUEVOS (CASO A
+// "compuerta"). Tono AZUL positivo: el trámite avanzó, no es una corrección.
+// Distinto de TramitesObservadosScreen (CASO B, naranja, "corregir").
 
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -9,17 +11,18 @@ import '../../theme/app_theme.dart';
 import '../../widgets/ui_kit.dart';
 import 'realizar_correccion_screen.dart';
 
-class TramitesObservadosScreen extends StatefulWidget {
-  const TramitesObservadosScreen({Key? key}) : super(key: key);
+class TramitesPendientesDocsScreen extends StatefulWidget {
+  const TramitesPendientesDocsScreen({Key? key}) : super(key: key);
 
   @override
-  State<TramitesObservadosScreen> createState() =>
-      _TramitesObservadosScreenState();
+  State<TramitesPendientesDocsScreen> createState() =>
+      _TramitesPendientesDocsScreenState();
 }
 
-class _TramitesObservadosScreenState extends State<TramitesObservadosScreen> {
+class _TramitesPendientesDocsScreenState
+    extends State<TramitesPendientesDocsScreen> {
   late TramitesSeguimientoService seguimientoService;
-  List<TramiteResumen> _observados = [];
+  List<TramiteResumen> _pendientes = [];
   bool _cargando = false;
 
   @override
@@ -36,9 +39,8 @@ class _TramitesObservadosScreenState extends State<TramitesObservadosScreen> {
     try {
       final todos = await seguimientoService.obtenerMisTramites();
       setState(() {
-        // Filtrar SOLO por estado GLOBAL Observado/Devuelto (CASO B).
-        // No incluye los de compuerta (CASO A: ver TramitesPendientesDocsScreen).
-        _observados = todos.where((t) => t.esObservado).toList();
+        // CASO A: estadoSeccion "Pendiente de documentos" y NO observado.
+        _pendientes = todos.where((t) => t.esCompuerta).toList();
       });
     } catch (e) {
       if (mounted) {
@@ -55,7 +57,7 @@ class _TramitesObservadosScreenState extends State<TramitesObservadosScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Trámites devueltos para corregir'),
+        title: const Text('Completar documentos'),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
@@ -71,17 +73,17 @@ class _TramitesObservadosScreenState extends State<TramitesObservadosScreen> {
               children: [
                 _buildHeader(),
                 Expanded(
-                  child: _observados.isEmpty
+                  child: _pendientes.isEmpty
                       ? const EmptyState(
                           icon: Icons.check_circle_outline,
-                          titulo: 'No tienes trámites con observaciones.',
+                          titulo: 'No tienes documentos pendientes 🎉',
                         )
                       : ListView.builder(
                           padding: const EdgeInsets.fromLTRB(AppSpacing.md, 0,
                               AppSpacing.md, AppSpacing.lg),
-                          itemCount: _observados.length,
+                          itemCount: _pendientes.length,
                           itemBuilder: (context, index) {
-                            final t = _observados[index];
+                            final t = _pendientes[index];
                             return _buildCard(t);
                           },
                         ),
@@ -96,16 +98,16 @@ class _TramitesObservadosScreenState extends State<TramitesObservadosScreen> {
       padding: const EdgeInsets.fromLTRB(
           AppSpacing.md, AppSpacing.md, AppSpacing.md, AppSpacing.sm),
       child: AppCard(
-        background: AppColors.observado.withOpacity(0.08),
+        background: AppColors.compuerta.withOpacity(0.08),
         child: Row(
           children: [
-            const Icon(Icons.assignment_return, color: AppColors.observado),
+            const Icon(Icons.trending_up, color: AppColors.compuerta),
             const SizedBox(width: AppSpacing.sm),
             const Expanded(
               child: Text(
-                'Estos trámites fueron devueltos para corregir. Revisa el motivo y reenvía.',
+                'Tu trámite avanzó — completa los documentos para continuar.',
                 style: TextStyle(
-                  color: AppColors.observado,
+                  color: AppColors.compuerta,
                   fontSize: 14,
                   fontWeight: FontWeight.w600,
                 ),
@@ -126,8 +128,8 @@ class _TramitesObservadosScreenState extends State<TramitesObservadosScreen> {
           children: [
             Row(
               children: [
-                const Icon(Icons.warning_amber_rounded,
-                    color: AppColors.observado),
+                const Icon(Icons.description_outlined,
+                    color: AppColors.compuerta),
                 const SizedBox(width: AppSpacing.sm),
                 Expanded(
                   child: Text(
@@ -136,9 +138,10 @@ class _TramitesObservadosScreenState extends State<TramitesObservadosScreen> {
                         fontWeight: FontWeight.w700, fontSize: 16),
                   ),
                 ),
-                EstadoChip(
-                  t.estado,
-                  color: EstadoChip.colorDeEstado(t.estado),
+                const EstadoChip(
+                  'Completar documentos',
+                  color: AppColors.compuerta,
+                  icon: Icons.description_outlined,
                 ),
               ],
             ),
@@ -155,10 +158,10 @@ class _TramitesObservadosScreenState extends State<TramitesObservadosScreen> {
             SizedBox(
               width: double.infinity,
               child: ElevatedButton.icon(
-                icon: const Icon(Icons.edit_note),
-                label: const Text('Corregir y Reenviar'),
+                icon: const Icon(Icons.upload_file),
+                label: const Text('Completar documentos'),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.observado,
+                  backgroundColor: AppColors.compuerta,
                   foregroundColor: Colors.white,
                 ),
                 onPressed: () {

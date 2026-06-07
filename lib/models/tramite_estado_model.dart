@@ -75,12 +75,12 @@ class SeccionEstado {
 
 class EventoHistorico {
   final String id;
-  final String
-  tipo; // creacion, cambio_estado, aprobacion, rechazo, completacion
-  final String descripcion;
+  final String tipo; // estado nuevo: Derivada, Observado, Rechazado, etc.
+  final String descripcion; // nombre del paso/nodo donde ocurrió
   final String? usuario;
   final String? departamento;
   final String fecha;
+  final String? motivo; // observación / justificación (si la hubo)
   final Map<String, dynamic>? detalles;
 
   EventoHistorico({
@@ -90,18 +90,24 @@ class EventoHistorico {
     this.usuario,
     this.departamento,
     required this.fecha,
+    this.motivo,
     this.detalles,
   });
 
+  /// Tolerante a los nombres reales que devuelve /tramites/{id}/estado
+  /// (nodoId, nombre, estado, funcionarioId, fechaCompletado, observaciones).
   factory EventoHistorico.fromJson(Map<String, dynamic> json) {
     return EventoHistorico(
-      id: json['id'] ?? '',
-      tipo: json['tipo'] ?? 'cambio_estado',
-      descripcion: json['descripcion'] ?? '',
-      usuario: json['usuario'],
-      departamento: json['departamento'],
-      fecha: json['fecha'] ?? '',
-      detalles: json['detalles'],
+      id: (json['id'] ?? json['nodoId'] ?? '').toString(),
+      tipo: (json['tipo'] ?? json['estado'] ?? json['resultado'] ?? 'cambio_estado')
+          .toString(),
+      descripcion: (json['descripcion'] ?? json['nombre'] ?? '').toString(),
+      usuario: (json['usuario'] ?? json['actor'] ?? json['funcionarioId'])?.toString(),
+      departamento: json['departamento']?.toString(),
+      fecha: (json['fecha'] ?? json['fechaCompletado'] ?? json['fechaCambio'] ?? '')
+          .toString(),
+      motivo: (json['motivo'] ?? json['observaciones'])?.toString(),
+      detalles: json['detalles'] is Map<String, dynamic> ? json['detalles'] : null,
     );
   }
 
@@ -112,6 +118,7 @@ class EventoHistorico {
     'usuario': usuario,
     'departamento': departamento,
     'fecha': fecha,
+    'motivo': motivo,
     'detalles': detalles,
   };
 }

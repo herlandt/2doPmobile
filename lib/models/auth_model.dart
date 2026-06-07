@@ -56,22 +56,34 @@ class LoginResponse {
 /// Modelo para solicitud de registro
 class RegisterRequest {
   final String nombre;
+  final String apellido;
   final String email;
   final String password;
   final String passwordConfirm;
+  final String telefono;
+  final String dni;
+  final String direccion;
 
   RegisterRequest({
     required this.nombre,
+    this.apellido = '',
     required this.email,
     required this.password,
     required this.passwordConfirm,
+    this.telefono = '',
+    this.dni = '',
+    this.direccion = '',
   });
 
   Map<String, dynamic> toJson() {
     return {
       'nombre': nombre,
+      'apellido': apellido,
       'email': email,
       'password': password,
+      'telefono': telefono,
+      'dni': dni,
+      'direccion': direccion,
     };
   }
 }

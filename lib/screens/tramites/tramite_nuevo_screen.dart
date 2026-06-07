@@ -4,9 +4,14 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../../models/politica_model.dart';
 import '../../models/formulario_model.dart';
+import '../../models/tramite_resumen_model.dart';
 import '../../services/auth_service.dart';
 import '../../services/tramites_service.dart';
 import '../../services/tramites_envio_service.dart';
+import '../../utils/error_messages.dart';
+import '../../theme/app_theme.dart';
+import '../../widgets/ui_kit.dart';
+import 'realizar_correccion_screen.dart';
 
 class TramiteNuevoScreen extends StatefulWidget {
   const TramiteNuevoScreen({Key? key}) : super(key: key);
@@ -26,6 +31,7 @@ class _TramiteNuevoScreenState extends State<TramiteNuevoScreen> {
 
   final Map<String, TextEditingController> controladores = {};
   final Map<String, String> datosFormulario = {};
+  final _formKey = GlobalKey<FormState>();
 
   bool cargando = false;
   bool enviando = false;
@@ -87,19 +93,70 @@ class _TramiteNuevoScreenState extends State<TramiteNuevoScreen> {
       print('✅ Datos cargados exitosamente');
     } catch (e) {
       print('❌ Error cargando datos: $e');
-      setState(() => mensajeError = 'Error al cargar los datos: $e');
+      setState(() => mensajeError = mensajeAmigable(e));
     } finally {
       setState(() => cargando = false);
     }
   }
 
-  /// Crear TextEditingController para cada campo del formulario
+  /// Crear TextEditingController para cada campo del formulario,
+  /// pre-llenando con los datos del perfil del usuario según el CONTRATO
+  /// de autollenado (mapeo por nombre de campo → dato del perfil).
   void _crearControladores() {
     if (formulario == null) return;
 
     for (var campo in formulario!.campos) {
-      controladores[campo.nombre] = TextEditingController();
+      final inicial = _valorAutollenado(campo.nombre);
+      final controller = TextEditingController(text: inicial);
+      controladores[campo.nombre] = controller;
+      // Mantener datosFormulario en sync para los campos pre-llenados
+      // (los handlers onChanged solo lo actualizan al editar).
+      if (inicial.isNotEmpty) {
+        datosFormulario[campo.nombre] = inicial;
+      }
     }
+  }
+
+  /// Devuelve el dato del perfil que corresponde a un campo del formulario,
+  /// según su nombre. Si el perfil no tiene el dato (o no hay mapeo), '' .
+  String _valorAutollenado(String nombreCampo) {
+    final usuario = authService.usuarioActual.value;
+    if (usuario == null) return '';
+
+    final nombre = nombreCampo.toLowerCase();
+
+    // nombre completo / solicitante → "nombre apellido"
+    if (nombre == 'nombre' ||
+        nombre == 'nombre_completo' ||
+        nombre == 'solicitante') {
+      return '${usuario.nombre} ${usuario.apellido}'.trim();
+    }
+
+    // documento de identidad
+    if (nombre == 'cedula' ||
+        nombre == 'dni' ||
+        nombre == 'ci' ||
+        nombre == 'carnet' ||
+        nombre == 'documento') {
+      return usuario.dni;
+    }
+
+    // teléfono
+    if (nombre == 'telefono' || nombre == 'celular' || nombre == 'movil') {
+      return usuario.telefono;
+    }
+
+    // correo
+    if (nombre == 'correo' || nombre == 'email') {
+      return usuario.email;
+    }
+
+    // dirección
+    if (nombre == 'direccion' || nombre == 'domicilio') {
+      return usuario.direccion;
+    }
+
+    return '';
   }
 
   /// Validar campo según sus reglas
@@ -149,23 +206,20 @@ class _TramiteNuevoScreenState extends State<TramiteNuevoScreen> {
     return null;
   }
 
-  /// Validar todo el formulario
-  bool _validarFormulario() {
-    if (formulario == null) return false;
-
-    bool valido = true;
+  /// Devuelve las ETIQUETAS de los campos requeridos/inválidos (vacío = todo OK),
+  /// para decirle al usuario exactamente cuáles revisar.
+  List<String> _camposInvalidos() {
+    if (formulario == null) return const [];
+    final invalidos = <String>[];
     for (var campo in formulario!.campos) {
+      if (campo.tipo == 'checkbox') continue; // el checkbox no valida por texto
       final controller = controladores[campo.nombre];
-      if (controller != null) {
-        final error = _validarCampo(campo, controller.text);
-        if (error != null) {
-          valido = false;
-          break;
-        }
+      final valor = controller?.text ?? '';
+      if (_validarCampo(campo, valor) != null) {
+        invalidos.add(campo.etiqueta);
       }
     }
-
-    return valido;
+    return invalidos;
   }
 
   /// Construir el campo según su tipo
@@ -187,7 +241,6 @@ class _TramiteNuevoScreenState extends State<TramiteNuevoScreen> {
           decoration: InputDecoration(
             labelText: label,
             hintText: campo.placeholder,
-            border: const OutlineInputBorder(),
           ),
           onChanged: (value) => datosFormulario[campo.nombre] = value,
           validator: (value) => _validarCampo(campo, value ?? ''),
@@ -200,7 +253,6 @@ class _TramiteNuevoScreenState extends State<TramiteNuevoScreen> {
           decoration: InputDecoration(
             labelText: label,
             hintText: campo.placeholder,
-            border: const OutlineInputBorder(),
           ),
           onChanged: (value) => datosFormulario[campo.nombre] = value,
           validator: (value) => _validarCampo(campo, value ?? ''),
@@ -210,7 +262,6 @@ class _TramiteNuevoScreenState extends State<TramiteNuevoScreen> {
         return DropdownButtonFormField<String>(
           decoration: InputDecoration(
             labelText: label,
-            border: const OutlineInputBorder(),
           ),
           items: campo.opciones
               ?.map((opcion) => DropdownMenuItem(
@@ -228,14 +279,18 @@ class _TramiteNuevoScreenState extends State<TramiteNuevoScreen> {
         );
 
       case 'checkbox':
-        return CheckboxListTile(
-          title: Text(label),
-          value: datosFormulario[campo.nombre] == 'true',
-          onChanged: (value) {
-            setState(() {
-              datosFormulario[campo.nombre] = value?.toString() ?? 'false';
-            });
-          },
+        return AppCard(
+          padding: EdgeInsets.zero,
+          child: CheckboxListTile(
+            title: Text(label),
+            activeColor: AppColors.primary,
+            value: datosFormulario[campo.nombre] == 'true',
+            onChanged: (value) {
+              setState(() {
+                datosFormulario[campo.nombre] = value?.toString() ?? 'false';
+              });
+            },
+          ),
         );
 
       default:
@@ -264,9 +319,13 @@ class _TramiteNuevoScreenState extends State<TramiteNuevoScreen> {
       mensajeExito = null;
     });
 
-    if (!_validarFormulario()) {
-      setState(() =>
-          mensajeError = 'Por favor completa todos los campos requeridos correctamente');
+    // Dispara los errores INLINE bajo cada campo, y arma la lista de cuáles faltan.
+    final formOk = _formKey.currentState?.validate() ?? true;
+    final faltantes = _camposInvalidos();
+    if (!formOk || faltantes.isNotEmpty) {
+      setState(() => mensajeError = faltantes.isEmpty
+          ? 'Revisa los campos marcados en rojo.'
+          : 'Completa o corrige: ${faltantes.join(', ')}');
       return;
     }
 
@@ -293,19 +352,30 @@ class _TramiteNuevoScreenState extends State<TramiteNuevoScreen> {
       );
 
       setState(() {
-        mensajeExito = '✅ Trámite enviado exitosamente\nCódigo: ${respuesta.codigo}';
+        mensajeExito = '✅ Trámite creado: ${respuesta.codigo}\n'
+            'Ahora sube los documentos requeridos para continuar.';
       });
 
       print('✅ Trámite enviado: ${respuesta.codigo}');
 
-      // Redirigir después de 2 segundos
-      await Future.delayed(const Duration(seconds: 2));
+      await Future.delayed(const Duration(seconds: 1));
       if (mounted) {
-        Get.back();
+        // Tras crear, el trámite queda esperando los documentos del primer nodo
+        // (compuerta). Llevamos al cliente directo a subirlos, en vez de volver al home.
+        final resumen = TramiteResumen(
+          id: respuesta.tramiteId,
+          codigo: respuesta.codigo,
+          politicaNombre: politica?.nombre ?? '',
+          estado: 'En curso',
+          nodoActualNombre: '',
+          fechaInicio: '',
+          progreso: 0,
+        );
+        Get.off(() => RealizarCorreccionScreen(tramite: resumen));
       }
     } catch (e) {
       print('❌ Error enviando trámite: $e');
-      setState(() => mensajeError = 'Error al enviar trámite: $e');
+      setState(() => mensajeError = mensajeAmigable(e));
     } finally {
       setState(() => enviando = false);
     }
@@ -316,112 +386,125 @@ class _TramiteNuevoScreenState extends State<TramiteNuevoScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Nuevo Trámite'),
-        elevation: 0,
       ),
       body: cargando
           ? const Center(child: CircularProgressIndicator())
           : SingleChildScrollView(
-              padding: const EdgeInsets.all(16.0),
+              padding: const EdgeInsets.all(AppSpacing.md),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   // Información de la política
                   if (politica != null)
-                    Card(
-                      color: Colors.blue.shade50,
-                      child: Padding(
-                        padding: const EdgeInsets.all(16.0),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              politica!.nombre,
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .titleLarge
-                                  ?.copyWith(fontWeight: FontWeight.bold),
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              politica!.descripcion,
-                              style: Theme.of(context).textTheme.bodyMedium,
-                            ),
-                          ],
-                        ),
+                    AppCard(
+                      background: AppColors.compuerta.withOpacity(0.06),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Container(
+                                width: 42,
+                                height: 42,
+                                decoration: BoxDecoration(
+                                  color: AppColors.compuerta.withOpacity(0.12),
+                                  borderRadius:
+                                      BorderRadius.circular(AppRadius.sm),
+                                ),
+                                child: const Icon(Icons.description_outlined,
+                                    color: AppColors.compuerta, size: 22),
+                              ),
+                              const SizedBox(width: AppSpacing.md),
+                              Expanded(
+                                child: Text(
+                                  politica!.nombre,
+                                  style: const TextStyle(
+                                      fontSize: 17,
+                                      fontWeight: FontWeight.w700),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: AppSpacing.sm),
+                          Text(
+                            politica!.descripcion,
+                            style: const TextStyle(color: AppColors.textoSuave),
+                          ),
+                        ],
                       ),
                     ),
-                  const SizedBox(height: 24),
+                  const SizedBox(height: AppSpacing.lg),
 
                   // Mensajes de error
                   if (mensajeError != null)
-                    Card(
-                      color: Colors.red.shade50,
-                      child: Padding(
-                        padding: const EdgeInsets.all(12.0),
-                        child: Row(
-                          children: [
-                            Icon(Icons.error_outline, color: Colors.red.shade700),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Text(
-                                mensajeError!,
-                                style: TextStyle(color: Colors.red.shade700),
-                              ),
+                    AppCard(
+                      background: AppColors.peligro.withOpacity(0.06),
+                      padding: const EdgeInsets.all(AppSpacing.md),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.error_outline,
+                              color: AppColors.peligro),
+                          const SizedBox(width: AppSpacing.md),
+                          Expanded(
+                            child: Text(
+                              mensajeError!,
+                              style: const TextStyle(color: AppColors.peligro),
                             ),
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
                     ),
-                  if (mensajeError != null) const SizedBox(height: 16),
+                  if (mensajeError != null)
+                    const SizedBox(height: AppSpacing.md),
 
                   // Mensajes de éxito
                   if (mensajeExito != null)
-                    Card(
-                      color: Colors.green.shade50,
-                      child: Padding(
-                        padding: const EdgeInsets.all(12.0),
-                        child: Row(
-                          children: [
-                            Icon(Icons.check_circle, color: Colors.green.shade700),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Text(
-                                mensajeExito!,
-                                style: TextStyle(color: Colors.green.shade700),
-                              ),
+                    AppCard(
+                      background: AppColors.exito.withOpacity(0.06),
+                      padding: const EdgeInsets.all(AppSpacing.md),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.check_circle,
+                              color: AppColors.exito),
+                          const SizedBox(width: AppSpacing.md),
+                          Expanded(
+                            child: Text(
+                              mensajeExito!,
+                              style: const TextStyle(color: AppColors.exito),
                             ),
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
                     ),
-                  if (mensajeExito != null) const SizedBox(height: 16),
+                  if (mensajeExito != null)
+                    const SizedBox(height: AppSpacing.md),
 
                   // Título del formulario
                   if (formulario != null) ...[
-                    Text(
-                      formulario!.nombre,
-                      style: Theme.of(context)
-                          .textTheme
-                          .headlineSmall
-                          ?.copyWith(fontWeight: FontWeight.bold),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      formulario!.descripcion ?? '',
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            color: Colors.grey.shade600,
-                          ),
-                    ),
-                    const SizedBox(height: 24),
+                    SectionHeader(formulario!.nombre),
+                    if ((formulario!.descripcion ?? '').isNotEmpty) ...[
+                      Text(
+                        formulario!.descripcion ?? '',
+                        style: const TextStyle(color: AppColors.textoSuave),
+                      ),
+                    ],
+                    const SizedBox(height: AppSpacing.lg),
 
-                    // Campos del formulario
-                    ...formulario!.campos.map((campo) {
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: 20.0),
-                        child: _construirCampo(campo),
-                      );
-                    }),
-                    const SizedBox(height: 24),
+                    // Campos del formulario (dentro de un Form → errores inline por campo)
+                    Form(
+                      key: _formKey,
+                      autovalidateMode: AutovalidateMode.onUserInteraction,
+                      child: Column(
+                        children: formulario!.campos.map((campo) {
+                          return Padding(
+                            padding:
+                                const EdgeInsets.only(bottom: AppSpacing.md),
+                            child: _construirCampo(campo),
+                          );
+                        }).toList(),
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.sm),
 
                     // Botones de acción
                     Row(
@@ -440,52 +523,49 @@ class _TramiteNuevoScreenState extends State<TramiteNuevoScreen> {
                                     ),
                                   )
                                 : const Icon(Icons.send),
-                            label: Text(enviando ? 'Enviando...' : 'Enviar Trámite'),
-                            style: ElevatedButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(vertical: 16),
-                            ),
+                            label:
+                                Text(enviando ? 'Enviando...' : 'Enviar Trámite'),
                           ),
                         ),
-                        const SizedBox(width: 12),
-                        ElevatedButton.icon(
+                        const SizedBox(width: AppSpacing.sm),
+                        OutlinedButton.icon(
                           onPressed: enviando ? null : () => Get.back(),
-                          icon: const Icon(Icons.cancel),
+                          icon: const Icon(Icons.close),
                           label: const Text('Cancelar'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.grey.shade300,
-                            foregroundColor: Colors.black87,
-                            padding: const EdgeInsets.symmetric(vertical: 16),
-                          ),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 24),
+                    const SizedBox(height: AppSpacing.lg),
 
                     // Info box
-                    Card(
-                      color: Colors.amber.shade50,
-                      child: Padding(
-                        padding: const EdgeInsets.all(12.0),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'ℹ️ Información Importante',
-                              style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                            ),
-                            const SizedBox(height: 8),
-                            const Text('• Los campos con * son obligatorios'),
-                            const Text('• Verifica que la información sea correcta'),
-                            const Text(
-                              '• Recibirás un código para seguimiento del trámite',
-                            ),
-                            const Text(
-                              '• El proceso puede durar varios días',
-                            ),
-                          ],
-                        ),
+                    AppCard(
+                      background: AppColors.observado.withOpacity(0.06),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: const [
+                              Icon(Icons.info_outline,
+                                  color: AppColors.observado, size: 20),
+                              SizedBox(width: AppSpacing.sm),
+                              Text(
+                                'Información Importante',
+                                style: TextStyle(
+                                    fontWeight: FontWeight.w700, fontSize: 14.5),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: AppSpacing.sm),
+                          const Text('• Los campos con * son obligatorios'),
+                          const Text(
+                              '• Verifica que la información sea correcta'),
+                          const Text(
+                            '• Recibirás un código para seguimiento del trámite',
+                          ),
+                          const Text(
+                            '• El proceso puede durar varios días',
+                          ),
+                        ],
                       ),
                     ),
                   ],

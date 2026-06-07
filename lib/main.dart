@@ -15,6 +15,7 @@ import 'services/documento_archivo_service.dart';
 import 'services/upload_queue_service.dart';
 import 'controllers/network_controller.dart';
 import 'widgets/chat_agente_ia.dart';
+import 'theme/app_theme.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -106,10 +107,7 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return GetMaterialApp(
       title: 'Sistema de Gestión de Trámites',
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
-        useMaterial3: true,
-      ),
+      theme: buildAppTheme(),
       initialRoute: AppRoutes.login,
       getPages: AppRoutes.pages,
       debugShowCheckedModeBanner: false,
@@ -156,13 +154,14 @@ class _AgenteFlotanteGlobal extends StatelessWidget {
                 button: true,
                 child: FloatingActionButton(
                   heroTag: 'agente-fab-global',
-                  backgroundColor: Colors.indigo,
-                  onPressed: () => showModalBottomSheet(
-                    context: context,
+                  backgroundColor: AppColors.ia,
+                  // Get.bottomSheet usa el navegador GLOBAL de GetX: este FAB vive
+                  // por encima del Navigator (en el builder de GetMaterialApp), así
+                  // que showModalBottomSheet(context) fallaba con "no Navigator".
+                  onPressed: () => Get.bottomSheet(
+                    const ChatAgenteIA(),
                     isScrollControlled: true,
                     backgroundColor: Colors.transparent,
-                    // Sin parámetros → ChatAgenteIA deduce módulo y trámite del routing.
-                    builder: (_) => const ChatAgenteIA(),
                   ),
                   child: const Icon(Icons.support_agent, color: Colors.white),
                 ),

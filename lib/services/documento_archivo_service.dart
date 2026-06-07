@@ -4,7 +4,7 @@
 //  - GET  /tramites/{id}/documentos                   → lista por trámite
 //  - GET  /documentos/{id}/preview                    → URL S3 firmada
 //  - GET  /documentos/{id}/versiones                  → historial
-//  - POST /repositorios/{id}/documentos (multipart)   → subir nuevo
+//  - POST /tramites/{id}/documentos     (multipart)   → subir nuevo (repo por trámite)
 //  - POST /documentos/{id}/versiones    (multipart)   → nueva versión
 //
 // En errores devuelve [DocException] con el código del backend cuando es
@@ -89,7 +89,6 @@ class DocumentoArchivoService extends GetxService {
   /// `DOC_PERMISO_DENEGADO` si el funcionario no tiene escritura en
   /// la actividad (CU-36) o `DOC_HASH_DUPLICADO` si ya existe.
   Future<Map<String, dynamic>> subirNuevo({
-    required String repositorioId,
     required String tramiteId,
     required String actividadId,
     String? nodoId,
@@ -98,11 +97,10 @@ class DocumentoArchivoService extends GetxService {
     bool obligatorio = false,
     required File archivo,
   }) async {
-    final uri = Uri.parse('$_base/repositorios/$repositorioId/documentos');
+    final uri = Uri.parse('$_base/tramites/$tramiteId/documentos');
     final req = http.MultipartRequest('POST', uri);
     final token = _auth.getToken();
     if (token != null) req.headers['Authorization'] = 'Bearer $token';
-    req.fields['tramiteId'] = tramiteId;
     req.fields['actividadId'] = actividadId;
     if (nodoId != null) req.fields['nodoId'] = nodoId;
     req.fields['tipoDocumento'] = tipoDocumento;

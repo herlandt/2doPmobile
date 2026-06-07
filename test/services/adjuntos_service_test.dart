@@ -1,6 +1,6 @@
 // Tests por endpoint de AdjuntosService.
 //  - GET /politicas/:id/documentos-requeridos
-//  - GET /tramites/:id/adjuntos (+ ?actividadId=)
+//  - GET /tramites/:id/documentos (+ ?actividadId=)
 // (POST multipart de subirAdjunto requiere File real → omitido, validado
 //  por análisis estático del servicio.)
 
@@ -46,7 +46,7 @@ void main() {
     expectEndpoint(captured!, 'GET', '/politicas/p1/documentos-requeridos');
   });
 
-  test('GET /tramites/:id/adjuntos — listarAdjuntos (sin filtro)', () async {
+  test('GET /tramites/:id/documentos — listarAdjuntos (sin filtro)', () async {
     final svc = nuevo();
     http.BaseRequest? captured;
 
@@ -57,10 +57,10 @@ void main() {
       return http.Response('[]', 200, headers: {'content-type': 'application/json'});
     });
 
-    expectEndpoint(captured!, 'GET', '/tramites/t1/adjuntos');
+    expectEndpoint(captured!, 'GET', '/tramites/t1/documentos');
   });
 
-  test('GET /tramites/:id/adjuntos?actividadId=… — listarAdjuntos (con filtro)', () async {
+  test('GET /tramites/:id/documentos?actividadId=… — listarAdjuntos (con filtro)', () async {
     final svc = nuevo();
     Uri? capturedUrl;
 

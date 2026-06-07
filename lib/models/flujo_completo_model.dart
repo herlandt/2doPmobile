@@ -5,18 +5,27 @@ class DocumentoRequerido {
   final String id;
   final String nombre;
   final String? descripcion;
+  final String? proveedor; // 'CLIENTE' | 'FUNCIONARIO'
+  final bool obligatorio;
 
   DocumentoRequerido({
     required this.id,
     required this.nombre,
     this.descripcion,
+    this.proveedor,
+    this.obligatorio = false,
   });
+
+  /// ¿Es un requisito que debe aportar el CLIENTE? (tolerante a mayúsculas)
+  bool get esCliente => (proveedor ?? '').toUpperCase() == 'CLIENTE';
 
   factory DocumentoRequerido.fromJson(Map<String, dynamic> json) {
     return DocumentoRequerido(
       id: json['id'] ?? '',
       nombre: json['nombre'] ?? '',
       descripcion: json['descripcion'],
+      proveedor: json['proveedor']?.toString(),
+      obligatorio: json['obligatorio'] == true,
     );
   }
 }
@@ -30,6 +39,10 @@ class FlujoNodo {
   final String? departamentoNombre;
   final String? swimlane;
 
+  // Datos del nodo de decisión (solo si tipo=decision)
+  final String? pregunta;
+  final List<Map<String, dynamic>> opciones; // [{valor, etiqueta, destinoNombre}]
+
   // Datos de la actividad (solo si tipo=actividad)
   final String? actividadId;
   final String? actividadNombre;
@@ -40,6 +53,10 @@ class FlujoNodo {
 
   // Estado en este trámite específico
   final String? estadoSeccion; // completada | en_curso | bloqueada | observado
+  final String? observacion; // último motivo/observación del historial en este nodo
+  // CASO OBSERVADO: ids de DocumentoArchivo que el funcionario marcó como "mal"
+  // y que el cliente debe corregir (vacío cuando no hay observación específica).
+  final List<String> documentosObservados;
   final bool esActual;
   final String? funcionarioId;
   final String? funcionarioNombre;
@@ -54,6 +71,8 @@ class FlujoNodo {
     this.departamentoCodigo,
     this.departamentoNombre,
     this.swimlane,
+    this.pregunta,
+    this.opciones = const [],
     this.actividadId,
     this.actividadNombre,
     this.actividadDescripcion,
@@ -61,6 +80,8 @@ class FlujoNodo {
     this.salidasPosibles = const [],
     this.documentosRequeridos = const [],
     this.estadoSeccion,
+    this.observacion,
+    this.documentosObservados = const [],
     this.esActual = false,
     this.funcionarioId,
     this.funcionarioNombre,
@@ -77,6 +98,13 @@ class FlujoNodo {
       departamentoCodigo: json['departamentoCodigo'],
       departamentoNombre: json['departamentoNombre'],
       swimlane: json['swimlane'],
+      pregunta: json['pregunta'],
+      opciones: json['opciones'] != null
+          ? List<Map<String, dynamic>>.from(
+              (json['opciones'] as List)
+                  .map((o) => Map<String, dynamic>.from(o as Map)),
+            )
+          : const [],
       actividadId: json['actividadId'],
       actividadNombre: json['actividadNombre'],
       actividadDescripcion: json['actividadDescripcion'],
@@ -91,6 +119,9 @@ class FlujoNodo {
             )
           : const [],
       estadoSeccion: json['estadoSeccion'],
+      observacion: json['observacion']?.toString(),
+      documentosObservados:
+          (json['documentosObservados'] as List?)?.cast<String>() ?? const [],
       esActual: json['esActual'] == true,
       funcionarioId: json['funcionarioId'],
       funcionarioNombre: json['funcionarioNombre'],

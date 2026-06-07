@@ -5,6 +5,9 @@ import 'package:get/get.dart';
 import '../../models/tramite_resumen_model.dart';
 import '../../services/tramites_seguimiento_service.dart';
 import '../../routes/app_routes.dart';
+import '../../utils/error_messages.dart';
+import '../../theme/app_theme.dart';
+import '../../widgets/ui_kit.dart';
 
 class MisTramitesScreen extends StatefulWidget {
   const MisTramitesScreen({Key? key}) : super(key: key);
@@ -39,7 +42,7 @@ class _MisTramitesScreenState extends State<MisTramitesScreen> {
       print('Error cargando trámites: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: ${e.toString()}')),
+          SnackBar(content: Text(mensajeAmigable(e))),
         );
       }
     }
@@ -71,25 +74,28 @@ class _MisTramitesScreenState extends State<MisTramitesScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Mis Trámites'),
-        elevation: 0,
         actions: [
           // C2: acceso rápido a trámites con observaciones
           IconButton(
-            icon: const Icon(Icons.warning_amber_rounded, color: Colors.orange),
+            icon: const Icon(Icons.warning_amber_rounded,
+                color: AppColors.observado),
             tooltip: 'Trámites Observados',
             onPressed: () => Get.toNamed(AppRoutes.tramitesObservados),
           ),
           IconButton(
             icon: const Icon(Icons.refresh),
+            tooltip: 'Actualizar',
             onPressed: _cargarTramites,
           ),
+          const SizedBox(width: AppSpacing.xs),
         ],
       ),
       body: Column(
         children: [
           // Filtros
           Padding(
-            padding: const EdgeInsets.all(16.0),
+            padding: const EdgeInsets.fromLTRB(
+                AppSpacing.md, AppSpacing.sm, AppSpacing.md, AppSpacing.sm),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -98,39 +104,15 @@ class _MisTramitesScreenState extends State<MisTramitesScreen> {
                   onChanged: (value) {
                     setState(() => busqueda = value);
                   },
-                  decoration: InputDecoration(
+                  decoration: const InputDecoration(
                     labelText: 'Buscar por código o nombre',
-                    prefixIcon: const Icon(Icons.search),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
+                    prefixIcon: Icon(Icons.search),
                   ),
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: AppSpacing.sm),
 
                 // Filtro por estado
-                DropdownButton<String>(
-                  isExpanded: true,
-                  value: filtroEstado.isEmpty ? null : filtroEstado,
-                  hint: const Text('Filtrar por estado'),
-                  items: [
-                    const DropdownMenuItem(
-                      value: '',
-                      child: Text('Todos los estados'),
-                    ),
-                    ...estadosDisponibles.map((estado) {
-                      return DropdownMenuItem(
-                        value: estado,
-                        child: Text(
-                          '${tramitesSeguimientoService.getIconoEstado(estado)} ${tramitesSeguimientoService.getTextoEstado(estado).toUpperCase()}',
-                        ),
-                      );
-                    }),
-                  ],
-                  onChanged: (value) {
-                    setState(() => filtroEstado = value ?? '');
-                  },
-                ),
+                _filtroEstadoField(),
               ],
             ),
           ),
@@ -144,31 +126,18 @@ class _MisTramitesScreenState extends State<MisTramitesScreen> {
                 }
 
                 if (tramitesFiltrados.isEmpty) {
-                  return Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Icon(Icons.inbox, size: 64, color: Colors.grey),
-                        const SizedBox(height: 16),
-                        const Text(
-                          'No hay trámites disponibles',
-                          style: TextStyle(color: Colors.grey, fontSize: 16),
-                        ),
-                        if (busqueda.isNotEmpty || filtroEstado.isNotEmpty)
-                          const Padding(
-                            padding: EdgeInsets.only(top: 8.0),
-                            child: Text(
-                              'Intenta cambiar los filtros',
-                              style: TextStyle(color: Colors.grey, fontSize: 12),
-                            ),
-                          ),
-                      ],
-                    ),
+                  return EmptyState(
+                    icon: Icons.inbox_outlined,
+                    titulo: 'No hay trámites disponibles',
+                    mensaje: (busqueda.isNotEmpty || filtroEstado.isNotEmpty)
+                        ? 'Intenta cambiar los filtros'
+                        : null,
                   );
                 }
 
                 return ListView.builder(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  padding: const EdgeInsets.fromLTRB(
+                      AppSpacing.md, 0, AppSpacing.md, AppSpacing.lg),
                   itemCount: tramitesFiltrados.length,
                   itemBuilder: (context, index) {
                     final tramite = tramitesFiltrados[index];
@@ -183,135 +152,184 @@ class _MisTramitesScreenState extends State<MisTramitesScreen> {
     );
   }
 
+  /// Campo de filtro por estado dentro de una superficie con borde del kit.
+  Widget _filtroEstadoField() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+      decoration: BoxDecoration(
+        color: AppColors.superficie,
+        borderRadius: BorderRadius.circular(AppRadius.button),
+        border: Border.all(color: AppColors.borde),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String>(
+          isExpanded: true,
+          value: filtroEstado.isEmpty ? null : filtroEstado,
+          hint: const Text('Filtrar por estado'),
+          items: [
+            const DropdownMenuItem(
+              value: '',
+              child: Text('Todos los estados'),
+            ),
+            ...estadosDisponibles.map((estado) {
+              return DropdownMenuItem(
+                value: estado,
+                child: Text(
+                  '${tramitesSeguimientoService.getIconoEstado(estado)} ${tramitesSeguimientoService.getTextoEstado(estado).toUpperCase()}',
+                ),
+              );
+            }),
+          ],
+          onChanged: (value) {
+            setState(() => filtroEstado = value ?? '');
+          },
+        ),
+      ),
+    );
+  }
+
+  /// Badge UX por trámite: NARANJA "Observado" (CASO B) o AZUL "Completar
+  /// documentos" (CASO A "compuerta"). Sin badge en otros casos.
+  Widget _buildBadge(TramiteResumen tramite) {
+    final bool observado = tramite.esObservado;
+    final Color color =
+        observado ? AppColors.observado : AppColors.compuerta;
+    final String texto =
+        observado ? 'Observado' : 'Completar documentos';
+    final IconData icon =
+        observado ? Icons.warning_amber_rounded : Icons.description_outlined;
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: EstadoChip(texto, color: color, icon: icon),
+    );
+  }
+
   Widget _buildTramiteCard(TramiteResumen tramite) {
     final color = tramitesSeguimientoService.getColorEstadoFlutter(tramite.estado);
     final progreso = tramitesSeguimientoService.progresoEfectivo(tramite.progreso, tramite.estado);
     final esCerrado = tramitesSeguimientoService.esEstadoTerminal(tramite.estado);
 
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      child: InkWell(
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+      child: AppCard(
         onTap: () async {
           print('📋 Navegando a detalle: ${tramite.id}');
           await Get.toNamed('/tramite-seguimiento', arguments: tramite.id);
           // Al volver del detalle, refresca la lista por si cambió el estado.
           if (mounted) _cargarTramites();
         },
-        child: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Encabezado: Código y Estado
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          tramite.codigo,
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                          ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Encabezado: Código y Estado
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        tramite.codigo,
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
                         ),
-                        const SizedBox(height: 4),
-                        Text(
-                          tramite.politicaNombre,
-                          style: const TextStyle(color: Colors.grey, fontSize: 13),
-                        ),
-                      ],
-                    ),
+                      ),
+                      const SizedBox(height: AppSpacing.xs),
+                      Text(
+                        tramite.politicaNombre,
+                        style: const TextStyle(
+                            color: AppColors.textoSuave, fontSize: 13),
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 12),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: color.withOpacity(0.1),
-                      border: Border.all(color: color),
-                      borderRadius: BorderRadius.circular(16),
+                ),
+                const SizedBox(width: AppSpacing.sm),
+                EstadoChip(
+                  tramitesSeguimientoService.getTextoEstado(tramite.estado),
+                  color: color,
+                ),
+              ],
+            ),
+
+            // Badge UX: distingue CASO A (compuerta, azul) de CASO B
+            // (observado, naranja). Ver helpers en TramiteResumen.
+            if (tramite.esObservado || tramite.esCompuerta) ...[
+              const SizedBox(height: AppSpacing.sm),
+              _buildBadge(tramite),
+            ],
+            const SizedBox(height: AppSpacing.sm),
+
+            // Etapa actual (solo si no está cerrado)
+            if (!esCerrado && tramite.nodoActualNombre.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+                child: Row(
+                  children: [
+                    const Icon(Icons.info_outline,
+                        size: 16, color: AppColors.textoSuave),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        'Etapa: ${tramite.nodoActualNombre}',
+                        style: const TextStyle(
+                            fontSize: 12, color: AppColors.textoSuave),
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
-                    child: Text(
-                      '${tramitesSeguimientoService.getIconoEstado(tramite.estado)} ${tramitesSeguimientoService.getTextoEstado(tramite.estado)}',
+                  ],
+                ),
+              ),
+
+            // Barra de progreso
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text(
+                      'Progreso',
+                      style:
+                          TextStyle(fontSize: 12, color: AppColors.textoSuave),
+                    ),
+                    Text(
+                      '$progreso%',
                       style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.bold,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
                         color: color,
                       ),
                     ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-
-              // Etapa actual (solo si no está cerrado)
-              if (!esCerrado && tramite.nodoActualNombre.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 12.0),
-                  child: Row(
-                    children: [
-                      Icon(Icons.info_outline, size: 16, color: Colors.grey[600]),
-                      const SizedBox(width: 6),
-                      Expanded(
-                        child: Text(
-                          'Etapa: ${tramite.nodoActualNombre}',
-                          style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ],
+                  ],
+                ),
+                const SizedBox(height: AppSpacing.xs),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(AppRadius.pill),
+                  child: LinearProgressIndicator(
+                    value: progreso / 100,
+                    minHeight: 6,
+                    backgroundColor: AppColors.borde,
+                    valueColor: AlwaysStoppedAnimation(color),
                   ),
                 ),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.sm),
 
-              // Barra de progreso
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        'Progreso',
-                        style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-                      ),
-                      Text(
-                        '$progreso%',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                          color: color,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(4),
-                    child: LinearProgressIndicator(
-                      value: progreso / 100,
-                      minHeight: 6,
-                      backgroundColor: Colors.grey.shade300,
-                      valueColor: AlwaysStoppedAnimation(color),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-
-              // Fechas
+            // Fechas
+            Text(
+              '📅 Creado: ${_formatoFecha(tramite.fechaInicio)}',
+              style:
+                  const TextStyle(fontSize: 11, color: AppColors.textoSuave),
+            ),
+            if (tramite.fechaCierreReal != null)
               Text(
-                '📅 Creado: ${_formatoFecha(tramite.fechaInicio)}',
-                style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+                '✓ Cerrado: ${_formatoFecha(tramite.fechaCierreReal!)}',
+                style: const TextStyle(fontSize: 11, color: AppColors.exito),
               ),
-              if (tramite.fechaCierreReal != null)
-                Text(
-                  '✓ Cerrado: ${_formatoFecha(tramite.fechaCierreReal!)}',
-                  style: TextStyle(fontSize: 11, color: Colors.green[600]),
-                ),
-            ],
-          ),
+          ],
         ),
       ),
     );

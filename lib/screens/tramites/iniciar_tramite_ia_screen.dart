@@ -14,10 +14,15 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
 import '../../models/sugerencia_politica_model.dart';
+import '../../models/tramite_resumen_model.dart';
 import '../../services/auth_service.dart';
 import '../../services/ia_service.dart';
 import '../../services/tramites_envio_service.dart';
+import '../../utils/error_messages.dart';
 import '../../widgets/grabador_voz_widget.dart';
+import '../../theme/app_theme.dart';
+import '../../widgets/ui_kit.dart';
+import 'realizar_correccion_screen.dart';
 
 class IniciarTramiteIaScreen extends StatefulWidget {
   const IniciarTramiteIaScreen({Key? key}) : super(key: key);
@@ -41,6 +46,7 @@ class _IniciarTramiteIaScreenState extends State<IniciarTramiteIaScreen> {
   String _seleccionadaId = '';
   String _errorMsg = '';
   String _codigoTramite = '';
+  String _tramiteId = '';
 
   @override
   void initState() {
@@ -84,7 +90,7 @@ class _IniciarTramiteIaScreenState extends State<IniciarTramiteIaScreen> {
     } catch (e) {
       setState(() {
         _paso = _Paso.describir;
-        _errorMsg = 'No se pudo procesar tu descripción: $e';
+        _errorMsg = mensajeAmigable(e);
       });
     }
   }
@@ -96,7 +102,7 @@ class _IniciarTramiteIaScreenState extends State<IniciarTramiteIaScreen> {
     if (e.code == 'IA_TIMEOUT') {
       return 'Tarda más de lo esperado. Intenta de nuevo.';
     }
-    return 'Error de la IA: ${e.code}';
+    return 'No pudimos analizar tu descripción. Intenta de nuevo o elige tu trámite desde el catálogo.';
   }
 
   Future<void> _confirmar() async {
@@ -124,13 +130,14 @@ class _IniciarTramiteIaScreenState extends State<IniciarTramiteIaScreen> {
       final result = await _envioSvc.iniciarTramiteC2(_seleccionadaId, clienteId);
       final codigo = (result['codigo'] ?? result['tramiteId'] ?? 'N/D').toString();
       setState(() {
+        _tramiteId = (result['tramiteId'] ?? result['id'] ?? '').toString();
         _codigoTramite = codigo;
         _paso = _Paso.exito;
       });
     } catch (e) {
       setState(() {
         _paso = _Paso.elegir;
-        _errorMsg = 'No se pudo iniciar el trámite: $e';
+        _errorMsg = mensajeAmigable(e);
       });
     }
   }
@@ -157,11 +164,10 @@ class _IniciarTramiteIaScreenState extends State<IniciarTramiteIaScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Iniciar trámite con IA'),
-        elevation: 0,
       ),
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(20),
+          padding: const EdgeInsets.all(AppSpacing.md),
           child: _body(),
         ),
       ),
@@ -186,25 +192,22 @@ class _IniciarTramiteIaScreenState extends State<IniciarTramiteIaScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Card(
-          color: Colors.deepPurple.shade50,
-          child: const Padding(
-            padding: EdgeInsets.all(14),
-            child: Row(
-              children: [
-                Icon(Icons.auto_awesome, color: Colors.deepPurple),
-                SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    'Describe lo que necesitas en tus propias palabras. La IA te sugerirá la política correcta.',
-                    style: TextStyle(fontSize: 13),
-                  ),
+        AppCard(
+          background: AppColors.ia.withOpacity(0.06),
+          child: Row(
+            children: const [
+              Icon(Icons.auto_awesome, color: AppColors.ia),
+              SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: Text(
+                  'Describe lo que necesitas en tus propias palabras. La IA te sugerirá la política correcta.',
+                  style: TextStyle(fontSize: 13),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: AppSpacing.md),
         TextField(
           controller: _descCtrl,
           maxLines: 5,
@@ -214,10 +217,9 @@ class _IniciarTramiteIaScreenState extends State<IniciarTramiteIaScreen> {
             labelText: 'Describe tu trámite',
             hintText:
                 'Ej: Necesito una nueva conexión eléctrica para mi casa nueva.',
-            border: OutlineInputBorder(),
           ),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: AppSpacing.sm),
         Row(
           children: [
             Expanded(
@@ -236,11 +238,11 @@ class _IniciarTramiteIaScreenState extends State<IniciarTramiteIaScreen> {
           ],
         ),
         if (_audio != null) ...[
-          const SizedBox(height: 6),
+          const SizedBox(height: AppSpacing.xs),
           Row(
             children: [
-              const Icon(Icons.graphic_eq, color: Colors.deepPurple, size: 18),
-              const SizedBox(width: 6),
+              const Icon(Icons.graphic_eq, color: AppColors.ia, size: 18),
+              const SizedBox(width: AppSpacing.xs),
               Expanded(
                 child: Text(
                   'Audio adjunto (${(_audio!.lengthSync() / 1024).toStringAsFixed(0)} KB)',
@@ -255,28 +257,27 @@ class _IniciarTramiteIaScreenState extends State<IniciarTramiteIaScreen> {
           ),
         ],
         if (_errorMsg.isNotEmpty) ...[
-          const SizedBox(height: 8),
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: Colors.red.shade50,
-              borderRadius: BorderRadius.circular(6),
-            ),
+          const SizedBox(height: AppSpacing.sm),
+          AppCard(
+            background: AppColors.peligro.withOpacity(0.06),
+            padding: const EdgeInsets.all(AppSpacing.sm),
             child: Row(
               children: [
-                Icon(Icons.error_outline, color: Colors.red.shade700, size: 18),
-                const SizedBox(width: 6),
+                const Icon(Icons.error_outline,
+                    color: AppColors.peligro, size: 18),
+                const SizedBox(width: AppSpacing.xs),
                 Expanded(
                   child: Text(
                     _errorMsg,
-                    style: TextStyle(color: Colors.red.shade700, fontSize: 12),
+                    style: const TextStyle(
+                        color: AppColors.peligro, fontSize: 12),
                   ),
                 ),
               ],
             ),
           ),
         ],
-        const SizedBox(height: 16),
+        const SizedBox(height: AppSpacing.md),
         ElevatedButton.icon(
           onPressed: analizando ? null : _analizar,
           icon: analizando
@@ -288,7 +289,7 @@ class _IniciarTramiteIaScreenState extends State<IniciarTramiteIaScreen> {
               : const Icon(Icons.auto_awesome),
           label: Text(analizando ? 'Analizando…' : 'Analizar con IA'),
           style: ElevatedButton.styleFrom(
-            padding: const EdgeInsets.symmetric(vertical: 14),
+            backgroundColor: AppColors.ia,
           ),
         ),
       ],
@@ -301,37 +302,30 @@ class _IniciarTramiteIaScreenState extends State<IniciarTramiteIaScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Card(
-          color: Colors.deepPurple.shade50,
-          child: Padding(
-            padding: const EdgeInsets.all(14),
-            child: Row(
-              children: [
-                const Icon(Icons.auto_awesome, color: Colors.deepPurple),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    'Sugerencia con ${(s.confianza * 100).toStringAsFixed(0)}% de confianza',
-                    style: const TextStyle(fontWeight: FontWeight.w600),
-                  ),
+        AppCard(
+          background: AppColors.ia.withOpacity(0.06),
+          child: Row(
+            children: [
+              const Icon(Icons.auto_awesome, color: AppColors.ia),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: Text(
+                  'Sugerencia con ${(s.confianza * 100).toStringAsFixed(0)}% de confianza',
+                  style: const TextStyle(fontWeight: FontWeight.w600),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
-        const SizedBox(height: 12),
-        const Text(
-          'Elige la política correcta:',
-          style: TextStyle(fontWeight: FontWeight.bold),
-        ),
-        const SizedBox(height: 8),
+        const SizedBox(height: AppSpacing.md),
+        const SectionHeader('Elige la política correcta'),
         for (final c in s.top3) _opcion(c, s.politicaSugeridaId),
         if (_errorMsg.isNotEmpty) ...[
-          const SizedBox(height: 8),
+          const SizedBox(height: AppSpacing.sm),
           Text(_errorMsg,
-              style: TextStyle(color: Colors.red.shade700, fontSize: 12)),
+              style: const TextStyle(color: AppColors.peligro, fontSize: 12)),
         ],
-        const SizedBox(height: 12),
+        const SizedBox(height: AppSpacing.md),
         Row(
           children: [
             Expanded(
@@ -359,6 +353,9 @@ class _IniciarTramiteIaScreenState extends State<IniciarTramiteIaScreen> {
                     : _seleccionadaId == s.politicaSugeridaId
                         ? 'Aceptar sugerencia'
                         : 'Confirmar mi elección'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.ia,
+                ),
               ),
             ),
           ],
@@ -369,26 +366,20 @@ class _IniciarTramiteIaScreenState extends State<IniciarTramiteIaScreen> {
 
   Widget _opcion(CandidatoPolitica c, String sugeridaId) {
     final seleccionada = c.politicaId == _seleccionadaId;
-    return GestureDetector(
-      onTap: () => setState(() => _seleccionadaId = c.politicaId),
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 8),
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: seleccionada ? Colors.deepPurple.shade50 : Colors.white,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(
-            color: seleccionada
-                ? Colors.deepPurple
-                : Colors.grey.shade300,
-            width: seleccionada ? 2 : 1,
-          ),
-        ),
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+      child: AppCard(
+        onTap: () => setState(() => _seleccionadaId = c.politicaId),
+        background: seleccionada
+            ? AppColors.ia.withOpacity(0.06)
+            : AppColors.superficie,
+        padding: const EdgeInsets.all(AppSpacing.sm),
         child: Row(
           children: [
             Radio<String>(
               value: c.politicaId,
               groupValue: _seleccionadaId,
+              activeColor: AppColors.ia,
               onChanged: (v) => setState(() => _seleccionadaId = v ?? ''),
             ),
             Expanded(
@@ -408,22 +399,16 @@ class _IniciarTramiteIaScreenState extends State<IniciarTramiteIaScreen> {
                       ),
                       if (c.politicaId == sugeridaId)
                         const Padding(
-                          padding: EdgeInsets.only(left: 6),
-                          child: Chip(
-                            label: Text('Sugerida',
-                                style: TextStyle(fontSize: 10)),
-                            backgroundColor: Color(0xFFE3F2FD),
-                            visualDensity: VisualDensity.compact,
-                            padding: EdgeInsets.zero,
-                          ),
+                          padding: EdgeInsets.only(left: AppSpacing.xs),
+                          child: EstadoChip('Sugerida', color: AppColors.ia),
                         ),
                     ],
                   ),
                   const SizedBox(height: 2),
                   Text(
                     'Confianza ${(c.confianza * 100).toStringAsFixed(0)}%',
-                    style: TextStyle(
-                        fontSize: 12, color: Colors.grey.shade700),
+                    style: const TextStyle(
+                        fontSize: 12, color: AppColors.textoSuave),
                   ),
                 ],
               ),
@@ -438,26 +423,47 @@ class _IniciarTramiteIaScreenState extends State<IniciarTramiteIaScreen> {
     return Center(
       child: Column(
         children: [
-          const SizedBox(height: 24),
+          const SizedBox(height: AppSpacing.lg),
           Container(
-            padding: const EdgeInsets.all(24),
+            padding: const EdgeInsets.all(AppSpacing.lg),
             decoration: BoxDecoration(
-              color: Colors.green.shade50,
+              color: AppColors.exito.withOpacity(0.10),
               shape: BoxShape.circle,
             ),
-            child: Icon(Icons.check_circle,
-                size: 72, color: Colors.green.shade600),
+            child: const Icon(Icons.check_circle,
+                size: 72, color: AppColors.exito),
           ),
-          const SizedBox(height: 18),
+          const SizedBox(height: AppSpacing.md),
           const Text(
             'Trámite iniciado con éxito',
             style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: AppSpacing.sm),
           Text('Código: $_codigoTramite',
-              style: TextStyle(color: Colors.grey.shade700)),
-          const SizedBox(height: 28),
+              style: const TextStyle(color: AppColors.textoSuave)),
+          const SizedBox(height: AppSpacing.lg),
           ElevatedButton.icon(
+            onPressed: _tramiteId.isEmpty
+                ? null
+                : () => Get.off(() => RealizarCorreccionScreen(
+                      tramite: TramiteResumen(
+                        id: _tramiteId,
+                        codigo: _codigoTramite,
+                        politicaNombre: '',
+                        estado: 'En curso',
+                        nodoActualNombre: '',
+                        fechaInicio: '',
+                        progreso: 0,
+                      ),
+                    )),
+            icon: const Icon(Icons.upload_file),
+            label: const Text('Subir documentos para continuar'),
+            style: ElevatedButton.styleFrom(
+              minimumSize: const Size(double.infinity, 52),
+            ),
+          ),
+          const SizedBox(height: 12),
+          OutlinedButton.icon(
             onPressed: () => Get.until((route) => route.settings.name == '/home'),
             icon: const Icon(Icons.home),
             label: const Text('Volver al inicio'),

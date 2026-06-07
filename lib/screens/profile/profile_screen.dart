@@ -1,8 +1,11 @@
-// Guía 5F - Pantalla de Perfil de Usuario
+// Guía 5F - Pantalla de Perfil de Usuario (ver / editar / guardar real)
 
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../../services/auth_service.dart';
+import '../../utils/error_messages.dart';
+import '../../theme/app_theme.dart';
+import '../../widgets/ui_kit.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({Key? key}) : super(key: key);
@@ -14,7 +17,15 @@ class ProfileScreen extends StatefulWidget {
 class _ProfileScreenState extends State<ProfileScreen> {
   late AuthService authService;
 
+  // Controladores persistentes para los campos editables.
+  final _nombreController = TextEditingController();
+  final _apellidoController = TextEditingController();
+  final _telefonoController = TextEditingController();
+  final _dniController = TextEditingController();
+  final _direccionController = TextEditingController();
+
   bool editando = false;
+  bool guardando = false;
   String? mensajeExito;
   String? mensajeError;
 
@@ -22,28 +33,93 @@ class _ProfileScreenState extends State<ProfileScreen> {
   void initState() {
     super.initState();
     authService = Get.find<AuthService>();
+    _cargarDesdePerfil();
   }
 
-  void _toggleEdicion() {
+  @override
+  void dispose() {
+    _nombreController.dispose();
+    _apellidoController.dispose();
+    _telefonoController.dispose();
+    _dniController.dispose();
+    _direccionController.dispose();
+    super.dispose();
+  }
+
+  /// Vuelca los datos del usuario actual en los controladores.
+  void _cargarDesdePerfil() {
+    final u = authService.usuarioActual.value;
+    if (u == null) return;
+    _nombreController.text = u.nombre;
+    _apellidoController.text = u.apellido;
+    _telefonoController.text = u.telefono;
+    _dniController.text = u.dni;
+    _direccionController.text = u.direccion;
+  }
+
+  void _activarEdicion() {
+    _cargarDesdePerfil();
     setState(() {
-      editando = !editando;
+      editando = true;
       mensajeError = null;
       mensajeExito = null;
     });
   }
 
-  void _guardarCambios() {
-    // En Ciclo 2, esto iría al backend
+  void _cancelarEdicion() {
+    _cargarDesdePerfil(); // descarta cambios no guardados
     setState(() {
-      mensajeExito = '✅ Perfil actualizado correctamente';
       editando = false;
+      mensajeError = null;
+      mensajeExito = null;
+    });
+  }
+
+  Future<void> _guardarCambios() async {
+    if (_nombreController.text.trim().isEmpty) {
+      setState(() => mensajeError = 'El nombre es requerido');
+      return;
+    }
+
+    setState(() {
+      guardando = true;
+      mensajeError = null;
+      mensajeExito = null;
     });
 
-    Future.delayed(const Duration(seconds: 2), () {
-      if (mounted) {
-        setState(() => mensajeExito = null);
-      }
-    });
+    try {
+      await authService.actualizarPerfil(
+        nombre: _nombreController.text.trim(),
+        apellido: _apellidoController.text.trim(),
+        telefono: _telefonoController.text.trim(),
+        dni: _dniController.text.trim(),
+        direccion: _direccionController.text.trim(),
+      );
+
+      _cargarDesdePerfil(); // refleja la respuesta del backend
+      setState(() {
+        editando = false;
+        mensajeExito = '✅ Perfil actualizado correctamente';
+      });
+
+      Future.delayed(const Duration(seconds: 3), () {
+        if (mounted) setState(() => mensajeExito = null);
+      });
+    } catch (e) {
+      setState(() => mensajeError = mensajeAmigable(e));
+    } finally {
+      if (mounted) setState(() => guardando = false);
+    }
+  }
+
+  /// Iniciales del usuario para el avatar (nombre + apellido).
+  String _iniciales(String nombre, String apellido) {
+    final n = nombre.trim();
+    final a = apellido.trim();
+    final i1 = n.isNotEmpty ? n[0] : '';
+    final i2 = a.isNotEmpty ? a[0] : '';
+    final r = (i1 + i2).toUpperCase();
+    return r.isEmpty ? '?' : r;
   }
 
   @override
@@ -51,7 +127,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Mi Perfil'),
-        elevation: 0,
       ),
       body: Obx(
         () {
@@ -64,147 +139,166 @@ class _ProfileScreenState extends State<ProfileScreen> {
           }
 
           return SingleChildScrollView(
-            padding: const EdgeInsets.all(16.0),
+            padding: const EdgeInsets.fromLTRB(
+                AppSpacing.md, AppSpacing.sm, AppSpacing.md, AppSpacing.xl),
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // Avatar
-                Container(
-                  width: 100,
-                  height: 100,
-                  decoration: BoxDecoration(
-                    color: Colors.blue.shade100,
-                    shape: BoxShape.circle,
-                  ),
-                  child: Center(
-                    child: Text(
-                      usuario.nombre.isNotEmpty
-                          ? usuario.nombre[0].toUpperCase()
-                          : '?',
-                      style: const TextStyle(
-                        fontSize: 48,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.blue,
+                // Cabecera: avatar (iniciales) + nombre
+                Column(
+                  children: [
+                    Container(
+                      width: 96,
+                      height: 96,
+                      decoration: BoxDecoration(
+                        color: AppColors.primary.withOpacity(0.12),
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: AppColors.primary.withOpacity(0.25),
+                          width: 2,
+                        ),
+                      ),
+                      child: Center(
+                        child: Text(
+                          _iniciales(usuario.nombre, usuario.apellido),
+                          style: const TextStyle(
+                            fontSize: 36,
+                            fontWeight: FontWeight.w800,
+                            color: AppColors.primary,
+                          ),
+                        ),
                       ),
                     ),
-                  ),
+                    const SizedBox(height: AppSpacing.md),
+                    Text(
+                      '${usuario.nombre} ${usuario.apellido}'.trim(),
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w800,
+                        color: Color(0xFF1D1B23),
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.xs),
+                    Text(
+                      usuario.email,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                          fontSize: 13, color: AppColors.textoSuave),
+                    ),
+                    const SizedBox(height: AppSpacing.sm),
+                    EstadoChip(
+                      usuario.activo ? 'Activo' : 'Inactivo',
+                      color:
+                          usuario.activo ? AppColors.exito : AppColors.peligro,
+                      icon: usuario.activo
+                          ? Icons.check_circle
+                          : Icons.cancel,
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 24),
+                const SizedBox(height: AppSpacing.lg),
 
                 // Mensajes
-                if (mensajeExito != null)
-                  Card(
-                    color: Colors.green.shade50,
-                    child: Padding(
-                      padding: const EdgeInsets.all(12.0),
-                      child: Row(
-                        children: [
-                          Icon(Icons.check_circle, color: Colors.green.shade700),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Text(
-                              mensajeExito!,
-                              style: TextStyle(color: Colors.green.shade700),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
+                if (mensajeExito != null) ...[
+                  _MensajeBanner(
+                    mensaje: mensajeExito!,
+                    color: AppColors.exito,
+                    icon: Icons.check_circle,
                   ),
-                if (mensajeError != null) ...[
-                  const SizedBox(height: 12),
-                  Card(
-                    color: Colors.red.shade50,
-                    child: Padding(
-                      padding: const EdgeInsets.all(12.0),
-                      child: Row(
-                        children: [
-                          Icon(Icons.error_outline, color: Colors.red.shade700),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Text(
-                              mensajeError!,
-                              style: TextStyle(color: Colors.red.shade700),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
+                  const SizedBox(height: AppSpacing.md),
                 ],
-                const SizedBox(height: 24),
+                if (mensajeError != null) ...[
+                  _MensajeBanner(
+                    mensaje: mensajeError!,
+                    color: AppColors.peligro,
+                    icon: Icons.error_outline,
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                ],
 
                 // Información de Perfil
-                Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Información Personal',
-                          style:
-                              Theme.of(context).textTheme.titleLarge?.copyWith(
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                        ),
-                        const SizedBox(height: 16),
+                const SectionHeader('Información Personal'),
+                AppCard(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Nombre (editable)
+                      _buildEditableField(
+                        label: 'Nombre',
+                        controller: _nombreController,
+                        editable: editando,
+                        icon: Icons.person,
+                      ),
+                      const SizedBox(height: AppSpacing.md),
 
-                        // Nombre
-                        _buildInfoField(
-                          label: 'Nombre Completo',
-                          value: usuario.nombre,
-                          editable: editando,
-                        ),
-                        const SizedBox(height: 12),
+                      // Apellido (editable)
+                      _buildEditableField(
+                        label: 'Apellido',
+                        controller: _apellidoController,
+                        editable: editando,
+                        icon: Icons.person_outline,
+                      ),
+                      const SizedBox(height: AppSpacing.md),
 
-                        // Email
-                        _buildInfoField(
-                          label: 'Correo Electrónico',
-                          value: usuario.email,
-                          editable: false,
-                        ),
-                        const SizedBox(height: 12),
+                      // Email (NO editable)
+                      _buildReadOnlyField(
+                        label: 'Correo Electrónico',
+                        value: usuario.email,
+                        icon: Icons.email,
+                      ),
+                      const SizedBox(height: AppSpacing.md),
 
-                        // Rol
-                        _buildInfoField(
-                          label: 'Rol',
-                          value: usuario.rol,
-                          editable: false,
-                        ),
-                        const SizedBox(height: 12),
+                      // Teléfono (editable)
+                      _buildEditableField(
+                        label: 'Teléfono',
+                        controller: _telefonoController,
+                        editable: editando,
+                        icon: Icons.phone,
+                        keyboardType: TextInputType.phone,
+                      ),
+                      const SizedBox(height: AppSpacing.md),
 
-                        // Estado
-                        _buildInfoField(
-                          label: 'Estado',
-                          value: usuario.activo ? 'Activo' : 'Inactivo',
-                          editable: false,
-                        ),
-                        const SizedBox(height: 12),
+                      // DNI / CI (editable)
+                      _buildEditableField(
+                        label: 'DNI / CI',
+                        controller: _dniController,
+                        editable: editando,
+                        icon: Icons.badge,
+                      ),
+                      const SizedBox(height: AppSpacing.md),
 
-                        // ID
-                        _buildInfoField(
-                          label: 'ID de Usuario',
-                          value: usuario.id,
-                          editable: false,
-                        ),
-                      ],
-                    ),
+                      // Dirección (editable)
+                      _buildEditableField(
+                        label: 'Dirección',
+                        controller: _direccionController,
+                        editable: editando,
+                        icon: Icons.home,
+                      ),
+                      const SizedBox(height: AppSpacing.md),
+
+                      // Rol (NO editable)
+                      _buildReadOnlyField(
+                        label: 'Rol',
+                        value: usuario.rol,
+                        icon: Icons.verified_user,
+                      ),
+                    ],
                   ),
                 ),
-                const SizedBox(height: 24),
+                const SizedBox(height: AppSpacing.lg),
 
                 // Botones
                 if (!editando) ...[
                   ElevatedButton.icon(
-                    onPressed: _toggleEdicion,
+                    onPressed: _activarEdicion,
                     icon: const Icon(Icons.edit),
                     label: const Text('Editar Perfil'),
                     style: ElevatedButton.styleFrom(
                       minimumSize: const Size(double.infinity, 48),
                     ),
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: AppSpacing.sm),
                   OutlinedButton.icon(
                     onPressed: () => Get.back(),
                     icon: const Icon(Icons.arrow_back),
@@ -215,16 +309,26 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
                 ] else ...[
                   ElevatedButton.icon(
-                    onPressed: _guardarCambios,
-                    icon: const Icon(Icons.save),
-                    label: const Text('Guardar Cambios'),
+                    onPressed: guardando ? null : _guardarCambios,
+                    icon: guardando
+                        ? const SizedBox(
+                            height: 20,
+                            width: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor:
+                                  AlwaysStoppedAnimation(Colors.white),
+                            ),
+                          )
+                        : const Icon(Icons.save),
+                    label: Text(guardando ? 'Guardando...' : 'Guardar Cambios'),
                     style: ElevatedButton.styleFrom(
                       minimumSize: const Size(double.infinity, 48),
                     ),
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: AppSpacing.sm),
                   OutlinedButton.icon(
-                    onPressed: _toggleEdicion,
+                    onPressed: guardando ? null : _cancelarEdicion,
                     icon: const Icon(Icons.cancel),
                     label: const Text('Cancelar'),
                     style: OutlinedButton.styleFrom(
@@ -232,45 +336,33 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ),
                   ),
                 ],
-                const SizedBox(height: 24),
+                const SizedBox(height: AppSpacing.lg),
 
                 // Sección de Seguridad
-                Card(
-                  color: Colors.amber.shade50,
-                  child: Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Seguridad',
-                          style:
-                              Theme.of(context).textTheme.titleMedium?.copyWith(
-                                    fontWeight: FontWeight.bold,
-                                  ),
+                const SectionHeader('Seguridad'),
+                AppCard(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      OutlinedButton.icon(
+                        onPressed: () {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content:
+                                  Text('Función disponible próximamente'),
+                            ),
+                          );
+                        },
+                        icon: const Icon(Icons.lock),
+                        label: const Text('Cambiar Contraseña'),
+                        style: OutlinedButton.styleFrom(
+                          minimumSize: const Size(double.infinity, 44),
                         ),
-                        const SizedBox(height: 12),
-                        OutlinedButton.icon(
-                          onPressed: () {
-                            // TODO: Implementar cambio de contraseña en C2
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text(
-                                    'Función disponible próximamente'),
-                              ),
-                            );
-                          },
-                          icon: const Icon(Icons.lock),
-                          label: const Text('Cambiar Contraseña'),
-                          style: OutlinedButton.styleFrom(
-                            minimumSize: const Size(double.infinity, 40),
-                          ),
-                        ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                 ),
-                const SizedBox(height: 24),
+                const SizedBox(height: AppSpacing.lg),
 
                 // Botón de Logout
                 ElevatedButton.icon(
@@ -290,17 +382,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   icon: const Icon(Icons.logout),
                   label: const Text('Cerrar Sesión'),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.red,
+                    backgroundColor: AppColors.peligro,
                     minimumSize: const Size(double.infinity, 48),
                   ),
                 ),
-                const SizedBox(height: 24),
+                const SizedBox(height: AppSpacing.lg),
 
                 // Footer Info
-                Text(
+                const Text(
                   '© 2026 Sistema de Gestión de Trámites\nVersión Beta',
                   textAlign: TextAlign.center,
-                  style: TextStyle(color: Colors.grey[600], fontSize: 12),
+                  style: TextStyle(color: AppColors.textoSuave, fontSize: 12),
                 ),
               ],
             ),
@@ -310,41 +402,113 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  Widget _buildInfoField({
+  /// Campo editable: cuando [editable] es true, el usuario puede escribir.
+  Widget _buildEditableField({
     required String label,
-    required String value,
+    required TextEditingController controller,
     required bool editable,
+    required IconData icon,
+    TextInputType? keyboardType,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
           label,
-          style: TextStyle(
+          style: const TextStyle(
             fontSize: 12,
-            color: Colors.grey[600],
-            fontWeight: FontWeight.w500,
+            color: AppColors.textoSuave,
+            fontWeight: FontWeight.w600,
           ),
         ),
-        const SizedBox(height: 4),
+        const SizedBox(height: AppSpacing.xs),
         TextField(
-          controller: TextEditingController(text: value),
+          controller: controller,
           readOnly: !editable,
+          keyboardType: keyboardType,
           decoration: InputDecoration(
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: BorderSide(color: Colors.grey.shade300),
-            ),
-            filled: !editable,
-            fillColor: !editable ? Colors.grey.shade100 : Colors.white,
-            contentPadding:
-                const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+            prefixIcon: Icon(icon, size: 20),
+            filled: true,
+            fillColor: !editable ? AppColors.fondo : Colors.white,
           ),
         ),
       ],
+    );
+  }
+
+  /// Campo de solo lectura (nunca editable, p. ej. email/rol/estado).
+  Widget _buildReadOnlyField({
+    required String label,
+    required String value,
+    required IconData icon,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 12,
+            color: AppColors.textoSuave,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: AppSpacing.xs),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+          decoration: BoxDecoration(
+            color: AppColors.fondo,
+            borderRadius: BorderRadius.circular(AppRadius.button),
+            border: Border.all(color: AppColors.borde),
+          ),
+          child: Row(
+            children: [
+              Icon(icon, size: 20, color: AppColors.textoSuave),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: Text(
+                  value.isEmpty ? '—' : value,
+                  style: const TextStyle(fontSize: 15),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Banner de mensaje (error/éxito) con color semántico.
+class _MensajeBanner extends StatelessWidget {
+  final String mensaje;
+  final Color color;
+  final IconData icon;
+  const _MensajeBanner({
+    required this.mensaje,
+    required this.color,
+    required this.icon,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(AppSpacing.sm + 4),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.08),
+        border: Border.all(color: color.withOpacity(0.4)),
+        borderRadius: BorderRadius.circular(AppRadius.button),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: color, size: 20),
+          const SizedBox(width: AppSpacing.sm),
+          Expanded(
+            child: Text(mensaje, style: TextStyle(color: color)),
+          ),
+        ],
+      ),
     );
   }
 }

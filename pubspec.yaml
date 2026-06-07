@@ -87,6 +87,18 @@ dev_dependencies:
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
 
+# ── Override de versiones ───────────────────────────────────────────────────
+# `record 7.x` (que trae un record_linux arreglado) exige Dart ^3.12, pero el
+# SDK aquí es 3.11.x, así que el máximo es `record 5.2.1`, que arrastra
+# `record_linux 0.7.2`. Ese paquete NO implementa la interfaz (`startStream`) y
+# rompe `kernel_snapshot` AUNQUE Linux no sea plataforma objetivo de la app.
+# Lo reemplazamos por un stub local que solo necesita COMPILAR (nunca se ejecuta
+# en Android/iOS). Cuando se suba el SDK a >=3.12, basta con quitar este override
+# y poner `record: ^7.0.0`.
+dependency_overrides:
+  record_linux:
+    path: tool/record_linux_stub
+
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
 

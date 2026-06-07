@@ -9,6 +9,9 @@ class TramiteResumen {
   final String fechaInicio;
   final String? fechaCierreReal;
   final int progreso; // 0-100
+  // Estado de la sección del nodo actual (ej: "Pendiente de documentos").
+  // Lo usa la UX para distinguir CASO A "compuerta" de CASO B "observado".
+  final String? estadoSeccion;
 
   TramiteResumen({
     required this.id,
@@ -19,7 +22,22 @@ class TramiteResumen {
     required this.fechaInicio,
     this.fechaCierreReal,
     required this.progreso,
+    this.estadoSeccion,
   });
+
+  /// CASO B: el trámite fue devuelto por algo MAL (estado GLOBAL).
+  bool get esObservado {
+    final e = estado.toLowerCase();
+    return e.contains('observ') || e.contains('devuelt');
+  }
+
+  /// CASO A "COMPUERTA" (positivo): el trámite AVANZÓ y pide documentos NUEVOS
+  /// de la siguiente actividad. estadoSeccion contiene 'pendiente'+'documento'
+  /// y NO está observado globalmente.
+  bool get esCompuerta {
+    final e = (estadoSeccion ?? '').toLowerCase();
+    return e.contains('pendiente') && e.contains('documento') && !esObservado;
+  }
 
   factory TramiteResumen.fromJson(Map<String, dynamic> json) {
     final progresoRaw = json['progreso'];
@@ -38,6 +56,7 @@ class TramiteResumen {
       fechaInicio: json['fechaInicio'] ?? json['fecha_inicio'] ?? '',
       fechaCierreReal: json['fechaCierreReal'] ?? json['fecha_cierre_real'],
       progreso: progreso,
+      estadoSeccion: json['estadoSeccion'] ?? json['estado_seccion'],
     );
   }
 
@@ -50,5 +69,6 @@ class TramiteResumen {
     'fechaInicio': fechaInicio,
     'fechaCierreReal': fechaCierreReal,
     'progreso': progreso,
+    'estadoSeccion': estadoSeccion,
   };
 }

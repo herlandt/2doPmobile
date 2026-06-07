@@ -13,12 +13,15 @@ import '../../models/documento_archivo_model.dart';
 import '../../models/tramite_estado_model.dart';
 import '../../models/flujo_completo_model.dart';
 import '../../models/tramite_riesgo_model.dart';
+import '../../routes/app_routes.dart';
 import '../../services/documento_archivo_service.dart';
 import '../../services/ia_service.dart';
 import '../../services/tramites_seguimiento_service.dart';
-import '../../routes/app_routes.dart';
+import '../../utils/error_messages.dart';
 import '../../widgets/chip_riesgo_widget.dart';
 import '../../widgets/preview_documento_widget.dart';
+import '../../theme/app_theme.dart';
+import '../../widgets/ui_kit.dart';
 
 class TramiteSeguimientoScreen extends StatefulWidget {
   const TramiteSeguimientoScreen({Key? key}) : super(key: key);
@@ -35,7 +38,6 @@ class _TramiteSeguimientoScreenState extends State<TramiteSeguimientoScreen> {
   String tramiteId = '';
   EstadoTramite? estado;
   FlujoCompleto? flujo;
-  String pestanaActiva = 'resumen';
   bool _cargandoFlujo = false;
 
   // Parte 2 — documentos del trámite + riesgo IA (CU-43).
@@ -57,6 +59,9 @@ class _TramiteSeguimientoScreenState extends State<TramiteSeguimientoScreen> {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _cargarEstado();
         _cargarDocumentosYRiesgo();
+        // El flujo ahora SIEMPRE se muestra (no detrás de una pestaña),
+        // por lo que se carga al abrir la pantalla.
+        _cargarFlujo();
       });
     }
   }
@@ -125,7 +130,7 @@ class _TramiteSeguimientoScreenState extends State<TramiteSeguimientoScreen> {
       if (!mounted) return;
       Navigator.of(context, rootNavigator: true).pop();
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('No se pudo abrir el documento: $e')),
+        SnackBar(content: Text(mensajeAmigable(e))),
       );
     }
   }
@@ -138,7 +143,7 @@ class _TramiteSeguimientoScreenState extends State<TramiteSeguimientoScreen> {
       print('Error cargando estado: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: ${e.toString()}')),
+          SnackBar(content: Text(mensajeAmigable(e))),
         );
       }
     }
@@ -153,11 +158,57 @@ class _TramiteSeguimientoScreenState extends State<TramiteSeguimientoScreen> {
       print('Error cargando flujo: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error al cargar flujo: $e')),
+          SnackBar(content: Text(mensajeAmigable(e))),
         );
       }
     } finally {
       if (mounted) setState(() => _cargandoFlujo = false);
+    }
+  }
+
+  /// Recarga el flujo y los documentos (tras subir un requisito faltante).
+  Future<void> _refrescarFlujoYDocumentos() async {
+    // Forzamos recarga del flujo (que es cacheado por _cargarFlujo).
+    flujo = null;
+    await _cargarFlujo();
+    await _cargarDocumentosYRiesgo();
+  }
+
+  /// ¿La sección del nodo está en "Pendiente de documentos"? Comparación
+  /// tolerante: contiene 'pendiente' y 'docu'.
+  bool _esPendienteDocumentos(FlujoNodo nodo) {
+    final s = (nodo.estadoSeccion ?? '').toLowerCase();
+    return s.contains('pendiente') && s.contains('docu');
+  }
+
+  /// Requisitos del CLIENTE obligatorios del nodo que AÚN no están cubiertos.
+  /// Un requisito está cubierto si existe un DocumentoArchivo cargado con
+  /// `documentoRequeridoId == requisito.id`.
+  List<DocumentoRequerido> _requisitosPendientes(FlujoNodo nodo) {
+    final cubiertos = _documentos
+        .map((d) => d.documentoRequeridoId)
+        .where((id) => id != null && id.isNotEmpty)
+        .toSet();
+    return nodo.documentosRequeridos
+        .where((r) => r.esCliente && r.obligatorio && !cubiertos.contains(r.id))
+        .toList();
+  }
+
+  /// Navega a SubirDocumentoScreen para cumplir un requisito faltante y, al
+  /// volver con éxito, refresca el flujo + documentos.
+  Future<void> _subirRequisito(FlujoNodo nodo, DocumentoRequerido req) async {
+    final result = await Get.toNamed(
+      AppRoutes.subirDocumento,
+      arguments: {
+        'tramiteId': tramiteId,
+        'actividadId': nodo.actividadId ?? '',
+        'actividadNombre': nodo.actividadNombre ?? nodo.nombre,
+        'documentoNombre': req.nombre,
+        'documentoRequeridoId': req.id,
+      },
+    );
+    if (result == true) {
+      await _refrescarFlujoYDocumentos();
     }
   }
 
@@ -166,22 +217,6 @@ class _TramiteSeguimientoScreenState extends State<TramiteSeguimientoScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Seguimiento de Trámite'),
-        elevation: 0,
-        actions: [
-          // C3: Acceso a la línea de tiempo visual
-          if (estado != null)
-            IconButton(
-              icon: const Icon(Icons.timeline),
-              tooltip: 'Línea de Tiempo',
-              onPressed: () => Get.toNamed(
-                AppRoutes.detalleLineaTiempo,
-                arguments: {
-                  'tramiteId': tramiteId,
-                  'codigo': estado!.codigo,
-                },
-              ),
-            ),
-        ],
       ),
       body: Obx(
         () {
@@ -190,42 +225,37 @@ class _TramiteSeguimientoScreenState extends State<TramiteSeguimientoScreen> {
           }
 
           if (estado == null) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(Icons.error_outline, size: 64, color: Colors.grey),
-                  const SizedBox(height: 16),
-                  const Text('Error al cargar el trámite'),
-                  const SizedBox(height: 16),
-                  ElevatedButton.icon(
-                    onPressed: _cargarEstado,
-                    icon: const Icon(Icons.refresh),
-                    label: const Text('Reintentar'),
-                  ),
-                ],
+            return EmptyState(
+              icon: Icons.error_outline,
+              titulo: 'Error al cargar el trámite',
+              accion: ElevatedButton.icon(
+                onPressed: _cargarEstado,
+                icon: const Icon(Icons.refresh),
+                label: const Text('Reintentar'),
               ),
             );
           }
 
           return SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(
+                AppSpacing.md, AppSpacing.md, AppSpacing.md, AppSpacing.xl),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Card de Estado General
+                // Header: código / estado / progreso
                 _buildCardEstadoGeneral(context),
-                const SizedBox(height: 16),
 
-                // Pestañas
-                _buildPestanas(),
-                const SizedBox(height: 16),
+                // Banner de riesgo IA (CU-43)
+                _buildBannerRiesgo(),
+                const SizedBox(height: AppSpacing.lg),
 
-                // Contenido según pestaña
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                  child: _buildContenidoPestana(),
-                ),
-                const SizedBox(height: 24),
+                // FLUJO: el trámite se organiza como una sola lista de pasos
+                const SectionHeader('Flujo del trámite'),
+                _buildPestanaFlujo(),
+                const SizedBox(height: AppSpacing.lg),
+
+                // Documentos del repositorio (CU-34)
+                _buildSeccionDocumentos(),
               ],
             ),
           );
@@ -264,384 +294,265 @@ class _TramiteSeguimientoScreenState extends State<TramiteSeguimientoScreen> {
     final color = tramitesSeguimientoService.getColorEstadoFlutter(estado!.estado);
     final progreso = _progresoEfectivo;
 
-    return Card(
-      margin: const EdgeInsets.all(16),
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Código y Estado
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        estado!.codigo,
-                        style: Theme.of(context)
-                            .textTheme
-                            .titleLarge
-                            ?.copyWith(fontWeight: FontWeight.bold),
-                        overflow: TextOverflow.ellipsis,
-                        maxLines: 1,
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        'ID: ${estado!.tramiteId}',
-                        style: TextStyle(color: Colors.grey[600], fontSize: 12),
-                        overflow: TextOverflow.ellipsis,
-                        maxLines: 1,
-                      ),
-                    ],
-                  ),
+    return AppCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Código y Estado
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      estado!.codigo,
+                      style: Theme.of(context)
+                          .textTheme
+                          .titleLarge
+                          ?.copyWith(fontWeight: FontWeight.bold),
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'ID: ${estado!.tramiteId}',
+                      style: const TextStyle(
+                          color: AppColors.textoSuave, fontSize: 12),
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 8,
-                  ),
-                  decoration: BoxDecoration(
-                    color: color.withOpacity(0.1),
-                    border: Border.all(color: color),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    '${tramitesSeguimientoService.getIconoEstado(estado!.estado)} ${tramitesSeguimientoService.getTextoEstado(estado!.estado)}',
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              EstadoChip(
+                '${tramitesSeguimientoService.getIconoEstado(estado!.estado)} ${tramitesSeguimientoService.getTextoEstado(estado!.estado)}',
+                color: color,
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.md),
+
+          // Progreso
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text('Progreso General'),
+                  Text(
+                    '$progreso%',
                     style: TextStyle(
                       fontWeight: FontWeight.bold,
                       color: color,
                     ),
                   ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-
-            // Progreso
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text('Progreso General'),
-                    Text(
-                      '$progreso%',
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        color: color,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(4),
-                  child: LinearProgressIndicator(
-                    value: progreso / 100,
-                    minHeight: 8,
-                    backgroundColor: Colors.grey.shade300,
-                    valueColor: AlwaysStoppedAnimation(color),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-
-            // Etapa Actual / Estado final
-            if (_esCerrado)
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: color.withOpacity(0.08),
-                  border: Border.all(color: color.withOpacity(0.4)),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Icon(
-                          tramitesSeguimientoService.esAprobado(estado!.estado)
-                              ? Icons.check_circle_outline
-                              : Icons.cancel_outlined,
-                          color: color,
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Text(
-                            'Trámite ${tramitesSeguimientoService.getTextoEstado(estado!.estado)}',
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              color: color,
-                            ),
-                            overflow: TextOverflow.ellipsis,
-                            maxLines: 1,
-                          ),
-                        ),
-                      ],
-                    ),
-                    // Descargar el documento de resolución (solo trámites aprobados)
-                    if (tramitesSeguimientoService.esAprobado(estado!.estado)) ...[
-                      const SizedBox(height: 10),
-                      SizedBox(
-                        width: double.infinity,
-                        child: OutlinedButton.icon(
-                          onPressed: _descargarResolucion,
-                          icon: const Icon(Icons.download),
-                          label: const Text('Descargar resolución'),
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              )
-            else
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.blue.shade50,
-                  border: Border.all(color: Colors.blue.shade200),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      '⏳ Etapa Actual',
-                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      estado!.nodoActual.nombre.isNotEmpty
-                          ? estado!.nodoActual.nombre
-                          : 'En revisión',
-                      style: const TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                    if (estado!.nodoActual.departamento != null) ...[
-                      const SizedBox(height: 4),
-                      Text(
-                        'Departamento: ${estado!.nodoActual.departamento}',
-                        style: TextStyle(color: Colors.grey[600], fontSize: 12),
-                      ),
-                    ],
-                  ],
+                ],
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(AppRadius.pill),
+                child: LinearProgressIndicator(
+                  value: progreso / 100,
+                  minHeight: 8,
+                  backgroundColor: AppColors.borde,
+                  valueColor: AlwaysStoppedAnimation(color),
                 ),
               ),
-          ],
-        ),
-      ),
-    );
-  }
+            ],
+          ),
+          const SizedBox(height: AppSpacing.md),
 
-  Widget _buildPestanas() {
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16.0),
-        child: Row(
-          children: [
-            _buildBotonPestana('resumen', '📋 Resumen'),
-            const SizedBox(width: 8),
-            _buildBotonPestana('flujo', '🛤️ Flujo'),
-            const SizedBox(width: 8),
-            _buildBotonPestana('secciones', '📑 Secciones'),
-            const SizedBox(width: 8),
-            _buildBotonPestana('historial', '📜 Historial'),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildBotonPestana(String nombre, String label) {
-    final activa = pestanaActiva == nombre;
-    return ElevatedButton(
-      onPressed: () {
-        setState(() => pestanaActiva = nombre);
-        if (nombre == 'flujo') _cargarFlujo();
-      },
-      style: ElevatedButton.styleFrom(
-        backgroundColor: activa ? Colors.blue : Colors.grey.shade200,
-        foregroundColor: activa ? Colors.white : Colors.black87,
-      ),
-      child: Text(label),
-    );
-  }
-
-  Widget _buildContenidoPestana() {
-    switch (pestanaActiva) {
-      case 'resumen':
-        return _buildPestanaResumen();
-      case 'flujo':
-        return _buildPestanaFlujo();
-      case 'secciones':
-        return _buildPestanaSecciones();
-      case 'historial':
-        return _buildPestanaHistorial();
-      default:
-        return const SizedBox.shrink();
-    }
-  }
-
-  Widget _buildPestanaResumen() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // CU-43 — Riesgo IA
-        if (_riesgo != null)
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
+          // Etapa Actual / Estado final
+          if (_esCerrado)
+            Container(
+              padding: const EdgeInsets.all(AppSpacing.sm + AppSpacing.xs),
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.08),
+                border: Border.all(color: color.withOpacity(0.4)),
+                borderRadius: BorderRadius.circular(AppRadius.sm),
+              ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
                     children: [
-                      const Icon(Icons.auto_awesome,
-                          color: Colors.deepPurple, size: 20),
-                      const SizedBox(width: 6),
-                      const Text(
-                        'Riesgo de demora (IA)',
-                        style: TextStyle(
-                            fontWeight: FontWeight.bold, fontSize: 14),
+                      Icon(
+                        tramitesSeguimientoService.esAprobado(estado!.estado)
+                            ? Icons.check_circle_outline
+                            : Icons.cancel_outlined,
+                        color: color,
                       ),
-                      const Spacer(),
-                      ChipRiesgoWidget(
-                        nivel: _riesgo!.nivel,
-                        probSuperarSla: _riesgo!.probSuperarSla,
+                      const SizedBox(width: AppSpacing.sm),
+                      Expanded(
+                        child: Text(
+                          'Trámite ${tramitesSeguimientoService.getTextoEstado(estado!.estado)}',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: color,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                          maxLines: 1,
+                        ),
                       ),
                     ],
                   ),
-                  if (_riesgo!.razones.isNotEmpty) ...[
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 6,
-                      runSpacing: 6,
-                      children: _riesgo!.razones
-                          .map((r) => Chip(
-                                label: Text(r,
-                                    style: const TextStyle(fontSize: 11)),
-                                visualDensity: VisualDensity.compact,
-                                backgroundColor: Colors.grey.shade100,
-                              ))
-                          .toList(),
+                  // Descargar el documento de resolución (solo trámites aprobados)
+                  if (tramitesSeguimientoService.esAprobado(estado!.estado)) ...[
+                    const SizedBox(height: AppSpacing.sm),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: _descargarResolucion,
+                        icon: const Icon(Icons.download),
+                        label: const Text('Descargar resolución'),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            )
+          else
+            Container(
+              padding: const EdgeInsets.all(AppSpacing.sm + AppSpacing.xs),
+              decoration: BoxDecoration(
+                color: AppColors.compuerta.withOpacity(0.08),
+                border: Border.all(color: AppColors.compuerta.withOpacity(0.3)),
+                borderRadius: BorderRadius.circular(AppRadius.sm),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    '⏳ Etapa Actual',
+                    style:
+                        TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                  Text(
+                    estado!.nodoActual.nombre.isNotEmpty
+                        ? estado!.nodoActual.nombre
+                        : 'En revisión',
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  if (estado!.nodoActual.departamento != null) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      'Departamento: ${estado!.nodoActual.departamento}',
+                      style: const TextStyle(
+                          color: AppColors.textoSuave, fontSize: 12),
                     ),
                   ],
                 ],
               ),
             ),
-          ),
+        ],
+      ),
+    );
+  }
 
-        // CU-42 (Sugerencia de ruta IA) se removió de esta pantalla:
-        // el flujo correcto es CU-40 — el cliente describe su problema y la
-        // IA recomienda el trámite — eso vive en IniciarTramiteIaScreen.
-
-        // CU-34 — Documentos del repositorio
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+  /// CU-43 — Banner de riesgo de demora (IA). Vacío si no hay datos de riesgo.
+  Widget _buildBannerRiesgo() {
+    if (_riesgo == null) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: AppSpacing.md),
+      child: AppCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
               children: [
-                Row(
-                  children: [
-                    const Icon(Icons.folder_open, size: 20),
-                    const SizedBox(width: 6),
-                    const Text(
-                      'Documentos del repositorio',
-                      style: TextStyle(
-                          fontWeight: FontWeight.bold, fontSize: 14),
-                    ),
-                    const Spacer(),
-                    if (_cargandoDocumentos)
-                      const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                if (_documentos.isEmpty && !_cargandoDocumentos)
-                  Text(
-                    'Aún no hay documentos en el repositorio para este trámite.',
-                    style: TextStyle(
-                        fontSize: 13, color: Colors.grey.shade700),
-                  ),
-                for (final d in _documentos)
-                  ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    dense: true,
-                    leading: Icon(
-                      _iconoTipoDoc(d.tipoDocumento),
-                      color: Colors.deepPurple,
-                    ),
-                    title: Text(
-                      d.nombreLogico,
-                      style: const TextStyle(fontWeight: FontWeight.w600),
-                    ),
-                    subtitle: Text(
-                      'v${d.numeroVersionActual} · ${d.tipoDocumento}'
-                      '${d.obligatorio ? " · obligatorio" : ""}',
-                      style: const TextStyle(fontSize: 11),
-                    ),
-                    trailing: TextButton.icon(
-                      onPressed: () => _abrirPreview(d),
-                      icon: const Icon(Icons.remove_red_eye, size: 16),
-                      label: const Text('Ver'),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-        ),
-
-        const SizedBox(height: 8),
-
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
+                const Icon(Icons.auto_awesome, color: AppColors.ia, size: 20),
+                const SizedBox(width: 6),
                 const Text(
-                  'Próximos Pasos',
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16,
-                  ),
+                  'Riesgo de demora (IA)',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
                 ),
-                const SizedBox(height: 12),
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.amber.shade50,
-                    border: Border.all(color: Colors.amber.shade300),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: const Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Tu trámite está en revisión',
-                        style: TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                      SizedBox(height: 8),
-                      Text(
-                        'Se te notificará cuando se requiera información adicional o cuando se complete el proceso.',
-                        style: TextStyle(fontSize: 13),
-                      ),
-                    ],
-                  ),
+                const Spacer(),
+                ChipRiesgoWidget(
+                  nivel: _riesgo!.nivel,
+                  probSuperarSla: _riesgo!.probSuperarSla,
                 ),
               ],
             ),
+            if (_riesgo!.razones.isNotEmpty) ...[
+              const SizedBox(height: AppSpacing.sm),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: _riesgo!.razones
+                    .map((r) => Chip(
+                          label:
+                              Text(r, style: const TextStyle(fontSize: 11)),
+                          visualDensity: VisualDensity.compact,
+                          backgroundColor: AppColors.fondo,
+                        ))
+                    .toList(),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// CU-34 — Documentos del repositorio del trámite.
+  Widget _buildSeccionDocumentos() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            const SectionHeader('Documentos del repositorio'),
+            const Spacer(),
+            if (_cargandoDocumentos)
+              const Padding(
+                padding: EdgeInsets.only(bottom: AppSpacing.sm),
+                child: SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              ),
+          ],
+        ),
+        AppCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (_documentos.isEmpty && !_cargandoDocumentos)
+                const Text(
+                  'Aún no hay documentos en el repositorio para este trámite.',
+                  style:
+                      TextStyle(fontSize: 13, color: AppColors.textoSuave),
+                ),
+              for (final d in _documentos)
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  dense: true,
+                  leading: Icon(
+                    _iconoTipoDoc(d.tipoDocumento),
+                    color: AppColors.primary,
+                  ),
+                  title: Text(
+                    d.nombreLogico,
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  subtitle: Text(
+                    'v${d.numeroVersionActual} · ${d.tipoDocumento}'
+                    '${d.obligatorio ? " · obligatorio" : ""}',
+                    style: const TextStyle(fontSize: 11),
+                  ),
+                  trailing: TextButton.icon(
+                    onPressed: () => _abrirPreview(d),
+                    icon: const Icon(Icons.remove_red_eye, size: 16),
+                    label: const Text('Ver'),
+                  ),
+                ),
+            ],
           ),
         ),
       ],
@@ -701,15 +612,138 @@ class _TramiteSeguimientoScreenState extends State<TramiteSeguimientoScreen> {
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
-      children: flujo!.nodos
-          .asMap()
-          .entries
-          .map((e) => _buildNodoFlujo(e.value, e.key == flujo!.nodos.length - 1))
-          .toList(),
+      children: [
+        // Compuerta de documentos: card prominente si el nodo actual está
+        // "Pendiente de documentos" y faltan obligatorios del cliente.
+        _buildCompuertaDocumentos(),
+        ...flujo!.nodos.asMap().entries.map(
+              (e) =>
+                  _buildNodoFlujo(e.value, e.key == flujo!.nodos.length - 1),
+            ),
+      ],
+    );
+  }
+
+  /// CU — Compuerta de documentos: cuando el trámite entra a una actividad y
+  /// faltan los documentos OBLIGATORIOS del CLIENTE, el backend deja la sección
+  /// en "Pendiente de documentos" y no avanza. Mostramos un card prominente con
+  /// los requisitos pendientes y un botón "Subir" por cada uno.
+  Widget _buildCompuertaDocumentos() {
+    final nodos = flujo?.nodos ?? const <FlujoNodo>[];
+    FlujoNodo? actual;
+    for (final n in nodos) {
+      if (n.esActual && _esPendienteDocumentos(n)) {
+        actual = n;
+        break;
+      }
+    }
+    if (actual == null) return const SizedBox.shrink();
+
+    final pendientes = _requisitosPendientes(actual);
+    if (pendientes.isEmpty) return const SizedBox.shrink();
+
+    final nodo = actual;
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: AppSpacing.md),
+      padding: const EdgeInsets.all(AppSpacing.md - 2),
+      decoration: BoxDecoration(
+        color: AppColors.compuerta.withOpacity(0.06),
+        borderRadius: BorderRadius.circular(AppRadius.sm),
+        border: Border.all(color: AppColors.compuerta, width: 1.5),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.upload_file,
+                  color: AppColors.compuerta, size: 20),
+              const SizedBox(width: AppSpacing.sm),
+              const Expanded(
+                child: Text(
+                  'Faltan documentos para continuar',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                    color: AppColors.compuerta,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          const Text(
+            'Sube los siguientes documentos obligatorios para que tu trámite avance.',
+            style: TextStyle(fontSize: 12, color: AppColors.textoSuave),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          ...pendientes.map(
+            (req) => Container(
+              margin: const EdgeInsets.only(bottom: AppSpacing.sm),
+              padding: const EdgeInsets.all(AppSpacing.sm + 2),
+              decoration: BoxDecoration(
+                color: AppColors.superficie,
+                borderRadius: BorderRadius.circular(AppRadius.sm),
+                border: Border.all(color: AppColors.borde),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          req.nombre,
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        if (req.descripcion != null &&
+                            req.descripcion!.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 2),
+                            child: Text(
+                              req.descripcion!,
+                              style: const TextStyle(
+                                fontSize: 11,
+                                color: AppColors.textoSuave,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: AppSpacing.sm),
+                  ElevatedButton.icon(
+                    onPressed: () => _subirRequisito(nodo, req),
+                    icon: const Icon(Icons.cloud_upload, size: 16),
+                    label: const Text('Subir'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.compuerta,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 8),
+                      textStyle: const TextStyle(fontSize: 13),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
   Widget _buildNodoFlujo(FlujoNodo nodo, bool esUltimo) {
+    // Fork/Join son nodos TÉCNICOS (división/unión de ramas paralelas): el
+    // usuario no debería verlos como un "paso". Los mostramos como un conector
+    // discreto en vez de una tarjeta "FORK"/"JOIN".
+    if (nodo.tipo == 'fork' || nodo.tipo == 'join') {
+      return _buildConectorParalelo(nodo, esUltimo);
+    }
     final color = _colorPorEstadoNodo(nodo);
     final icono = _iconoPorEstadoNodo(nodo);
     final esActividad = nodo.tipo == 'actividad';
@@ -727,7 +761,7 @@ class _TramiteSeguimientoScreenState extends State<TramiteSeguimientoScreen> {
                 color: color,
                 shape: BoxShape.circle,
                 border: nodo.esActual
-                    ? Border.all(color: Colors.amber, width: 3)
+                    ? Border.all(color: AppColors.primary, width: 3)
                     : null,
               ),
               child: Icon(icono, color: Colors.white, size: 20),
@@ -736,22 +770,23 @@ class _TramiteSeguimientoScreenState extends State<TramiteSeguimientoScreen> {
               Container(
                 width: 2,
                 height: esActividad ? 80 : 40,
-                color: Colors.grey.shade300,
+                color: AppColors.borde,
               ),
           ],
         ),
-        const SizedBox(width: 12),
+        const SizedBox(width: AppSpacing.sm + AppSpacing.xs),
         // Tarjeta del nodo
         Expanded(
           child: Padding(
-            padding: const EdgeInsets.only(bottom: 12.0),
-            child: Card(
-              elevation: nodo.esActual ? 4 : 1,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-                side: nodo.esActual
-                    ? const BorderSide(color: Colors.amber, width: 2)
-                    : BorderSide.none,
+            padding: const EdgeInsets.only(bottom: AppSpacing.sm + AppSpacing.xs),
+            child: Container(
+              decoration: BoxDecoration(
+                color: AppColors.superficie,
+                borderRadius: BorderRadius.circular(AppRadius.card),
+                border: Border.all(
+                  color: nodo.esActual ? AppColors.primary : AppColors.borde,
+                  width: nodo.esActual ? 2 : 1,
+                ),
               ),
               child: esActividad
                   ? _buildNodoActividad(nodo, color)
@@ -764,43 +799,172 @@ class _TramiteSeguimientoScreenState extends State<TramiteSeguimientoScreen> {
   }
 
   Widget _buildNodoSimple(FlujoNodo nodo, Color color) {
+    // Nodo de decisión (if): mostramos LA PREGUNTA y a dónde lleva cada rama,
+    // no el tipo genérico "DECISION".
+    if (nodo.tipo == 'decision') {
+      return _buildNodoDecision(nodo);
+    }
     return Padding(
-      padding: const EdgeInsets.all(12.0),
-      child: Row(
+      padding: const EdgeInsets.all(AppSpacing.sm + AppSpacing.xs),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  nodo.nombre,
-                  style: const TextStyle(fontWeight: FontWeight.bold),
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      nodo.nombre,
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    Text(
+                      _etiquetaTipoNodo(nodo.tipo),
+                      style: const TextStyle(
+                          fontSize: 11, color: AppColors.textoSuave),
+                    ),
+                  ],
                 ),
-                Text(
-                  nodo.tipo.toUpperCase(),
-                  style: TextStyle(fontSize: 11, color: Colors.grey[600]),
-                ),
-              ],
-            ),
-          ),
-          if (nodo.esActual)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: Colors.amber,
-                borderRadius: BorderRadius.circular(12),
               ),
-              child: const Text(
-                'ACTUAL',
-                style: TextStyle(
-                  fontSize: 10,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
-                ),
+              if (nodo.esActual)
+                const EstadoChip('ACTUAL', color: AppColors.primary),
+            ],
+          ),
+          if (nodo.observacion != null && nodo.observacion!.trim().isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text(
+                '⚠️ ${nodo.observacion}',
+                style:
+                    const TextStyle(fontSize: 11, color: AppColors.observado),
               ),
             ),
         ],
       ),
+    );
+  }
+
+  /// Etiqueta legible para tipos de nodo simples (inicio/fin).
+  String _etiquetaTipoNodo(String tipo) {
+    switch (tipo) {
+      case 'inicio':
+        return 'Inicio del trámite';
+      case 'fin':
+        return 'Fin del trámite';
+      default:
+        return tipo.toUpperCase();
+    }
+  }
+
+  /// ¿La pregunta de un decisión quedó vacía o con el placeholder "¿Decisión?"?
+  bool _preguntaVaciaDecision(String? p) {
+    final norm = (p ?? '').replaceAll(RegExp(r'[¿?]'), '').trim().toLowerCase();
+    return norm.isEmpty || norm == 'decision' || norm == 'decisión';
+  }
+
+  /// Nodo de decisión (if): muestra LA PREGUNTA y a dónde lleva cada rama.
+  Widget _buildNodoDecision(FlujoNodo nodo) {
+    final tienePregunta = !_preguntaVaciaDecision(nodo.pregunta);
+    final pregunta = tienePregunta ? nodo.pregunta! : '¿Decisión?';
+    return Padding(
+      padding: const EdgeInsets.all(AppSpacing.sm + AppSpacing.xs),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(Icons.help_outline,
+                  size: 16,
+                  color:
+                      tienePregunta ? AppColors.primary : AppColors.observado),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  pregunta,
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: tienePregunta ? null : AppColors.observado,
+                  ),
+                ),
+              ),
+              if (nodo.esActual)
+                const EstadoChip('ACTUAL', color: AppColors.primary),
+            ],
+          ),
+          if (nodo.opciones.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            ...nodo.opciones.map((op) {
+              final etiqueta = (op['etiqueta'] ?? op['valor'] ?? '').toString();
+              final destino = (op['destinoNombre'] ?? '').toString();
+              return Padding(
+                padding: const EdgeInsets.only(top: 3, left: 2),
+                child: Text(
+                  destino.isNotEmpty ? '→ $etiqueta: $destino' : '→ $etiqueta',
+                  style: const TextStyle(
+                      fontSize: 12, color: AppColors.textoSuave),
+                ),
+              );
+            }),
+          ],
+          if (nodo.observacion != null && nodo.observacion!.trim().isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text(
+                '⚠️ ${nodo.observacion}',
+                style:
+                    const TextStyle(fontSize: 11, color: AppColors.observado),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// Conector discreto para fork/join (nodos técnicos): el usuario no los ve
+  /// como un "paso", solo un punto pequeño + un texto en gris.
+  Widget _buildConectorParalelo(FlujoNodo nodo, bool esUltimo) {
+    final esFork = nodo.tipo == 'fork';
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 40,
+          child: Column(
+            children: [
+              Container(
+                width: 18,
+                height: 18,
+                decoration: const BoxDecoration(
+                  color: AppColors.textoSuave,
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(esFork ? Icons.call_split : Icons.call_merge,
+                    size: 11, color: Colors.white),
+              ),
+              if (!esUltimo)
+                Container(width: 2, height: 26, color: AppColors.borde),
+            ],
+          ),
+        ),
+        const SizedBox(width: AppSpacing.sm + AppSpacing.xs),
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.only(top: 1, bottom: AppSpacing.sm + AppSpacing.xs),
+            child: Text(
+              esFork
+                  ? 'El trámite continúa en varias tareas a la vez'
+                  : 'Las tareas paralelas se reúnen para continuar',
+              style: const TextStyle(
+                fontSize: 11,
+                color: AppColors.textoSuave,
+                fontStyle: FontStyle.italic,
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -826,13 +990,15 @@ class _TramiteSeguimientoScreenState extends State<TramiteSeguimientoScreen> {
                       padding: const EdgeInsets.only(top: 2),
                       child: Row(
                         children: [
-                          Icon(Icons.business, size: 12, color: Colors.grey[600]),
+                          const Icon(Icons.business,
+                              size: 12, color: AppColors.textoSuave),
                           const SizedBox(width: 4),
                           Expanded(
                             child: Text(
                               '${nodo.departamentoCodigo}'
                                   '${nodo.departamentoNombre != null ? ' · ${nodo.departamentoNombre}' : ''}',
-                              style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                              style: const TextStyle(
+                                  fontSize: 12, color: AppColors.textoSuave),
                               overflow: TextOverflow.ellipsis,
                               maxLines: 1,
                             ),
@@ -860,7 +1026,8 @@ class _TramiteSeguimientoScreenState extends State<TramiteSeguimientoScreen> {
               padding: const EdgeInsets.only(bottom: 6),
               child: Row(
                 children: [
-                  const Icon(Icons.timer_outlined, size: 14, color: Colors.blueGrey),
+                  const Icon(Icons.timer_outlined,
+                      size: 14, color: AppColors.textoSuave),
                   const SizedBox(width: 6),
                   Text(
                     'SLA: ${nodo.slaHoras} horas',
@@ -874,7 +1041,8 @@ class _TramiteSeguimientoScreenState extends State<TramiteSeguimientoScreen> {
               padding: const EdgeInsets.only(bottom: 6),
               child: Row(
                 children: [
-                  const Icon(Icons.person_outline, size: 14, color: Colors.blueGrey),
+                  const Icon(Icons.person_outline,
+                      size: 14, color: AppColors.textoSuave),
                   const SizedBox(width: 6),
                   Expanded(
                     child: Text(
@@ -885,21 +1053,57 @@ class _TramiteSeguimientoScreenState extends State<TramiteSeguimientoScreen> {
                 ],
               ),
             ),
+          if (nodo.fechaAsignacion != null && nodo.fechaAsignacion!.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Row(
+                children: [
+                  const Icon(Icons.login,
+                      size: 14, color: AppColors.textoSuave),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      'Asignado: ${_formatoFecha(nodo.fechaAsignacion!)}',
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          if (nodo.fechaCompletado != null && nodo.fechaCompletado!.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Row(
+                children: [
+                  const Icon(Icons.check_circle_outline,
+                      size: 14, color: AppColors.exito),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      'Completado: ${_formatoFecha(nodo.fechaCompletado!)}',
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           const SizedBox(height: 8),
           if (nodo.documentosRequeridos.isEmpty)
             Container(
-              padding: const EdgeInsets.all(8),
+              padding: const EdgeInsets.all(AppSpacing.sm),
               decoration: BoxDecoration(
-                color: Colors.grey.shade100,
-                borderRadius: BorderRadius.circular(6),
+                color: AppColors.fondo,
+                borderRadius: BorderRadius.circular(AppRadius.sm),
               ),
-              child: Row(
+              child: const Row(
                 children: [
-                  Icon(Icons.info_outline, size: 14, color: Colors.grey[600]),
-                  const SizedBox(width: 6),
+                  Icon(Icons.info_outline,
+                      size: 14, color: AppColors.textoSuave),
+                  SizedBox(width: 6),
                   Text(
                     'Esta actividad no requiere documentos',
-                    style: TextStyle(fontSize: 12, color: Colors.grey[700]),
+                    style:
+                        TextStyle(fontSize: 12, color: AppColors.textoSuave),
                   ),
                 ],
               ),
@@ -907,14 +1111,15 @@ class _TramiteSeguimientoScreenState extends State<TramiteSeguimientoScreen> {
           else ...[
             Row(
               children: [
-                const Icon(Icons.folder_outlined, size: 14, color: Colors.indigo),
+                const Icon(Icons.folder_outlined,
+                    size: 14, color: AppColors.compuerta),
                 const SizedBox(width: 6),
                 Text(
                   'Documentos requeridos (${nodo.documentosRequeridos.length})',
                   style: const TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.bold,
-                    color: Colors.indigo,
+                    color: AppColors.compuerta,
                   ),
                 ),
               ],
@@ -923,11 +1128,11 @@ class _TramiteSeguimientoScreenState extends State<TramiteSeguimientoScreen> {
             ...nodo.documentosRequeridos.map(
               (doc) => Container(
                 margin: const EdgeInsets.only(bottom: 4),
-                padding: const EdgeInsets.all(8),
+                padding: const EdgeInsets.all(AppSpacing.sm),
                 decoration: BoxDecoration(
-                  color: Colors.indigo.shade50,
-                  borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: Colors.indigo.shade100),
+                  color: AppColors.compuerta.withOpacity(0.06),
+                  borderRadius: BorderRadius.circular(AppRadius.sm),
+                  border: Border.all(color: AppColors.compuerta.withOpacity(0.2)),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -935,7 +1140,7 @@ class _TramiteSeguimientoScreenState extends State<TramiteSeguimientoScreen> {
                     Row(
                       children: [
                         const Icon(Icons.description_outlined,
-                            size: 14, color: Colors.indigo),
+                            size: 14, color: AppColors.compuerta),
                         const SizedBox(width: 6),
                         Expanded(
                           child: Text(
@@ -953,11 +1158,30 @@ class _TramiteSeguimientoScreenState extends State<TramiteSeguimientoScreen> {
                         padding: const EdgeInsets.only(left: 20, top: 2),
                         child: Text(
                           doc.descripcion!,
-                          style: TextStyle(fontSize: 11, color: Colors.grey[700]),
+                          style: const TextStyle(
+                              fontSize: 11, color: AppColors.textoSuave),
                         ),
                       ),
                   ],
                 ),
+              ),
+            ),
+          ],
+          // Observación / motivo (absorbe el antiguo Historial por nodo).
+          if (nodo.observacion != null && nodo.observacion!.trim().isNotEmpty) ...[
+            const SizedBox(height: AppSpacing.sm),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(AppSpacing.sm),
+              decoration: BoxDecoration(
+                color: AppColors.observado.withOpacity(0.08),
+                border: Border.all(color: AppColors.observado.withOpacity(0.3)),
+                borderRadius: BorderRadius.circular(AppRadius.sm),
+              ),
+              child: Text(
+                'Observación: ${nodo.observacion}',
+                style:
+                    const TextStyle(fontSize: 12, color: AppColors.observado),
               ),
             ),
           ],
@@ -986,24 +1210,24 @@ class _TramiteSeguimientoScreenState extends State<TramiteSeguimientoScreen> {
   }
 
   Color _colorPorEstadoNodo(FlujoNodo nodo) {
-    if (nodo.esActual) return Colors.amber.shade700;
+    if (nodo.esActual) return AppColors.primary;
     switch (nodo.estadoSeccion) {
       case 'Derivada':
       case 'completada':
       case 'completado':
-        return Colors.green;
+        return AppColors.exito;
       case 'En ejecucion':
       case 'en_curso':
-        return Colors.blue;
+        return AppColors.compuerta;
       case 'Pendiente de recepcion':
-        return Colors.lightBlue;
+        return AppColors.compuerta;
       case 'Observado':
       case 'observado':
-        return Colors.orange;
+        return AppColors.observado;
       case 'Bloqueada':
       case 'bloqueada':
       default:
-        return Colors.grey;
+        return AppColors.textoSuave;
     }
   }
 
@@ -1059,203 +1283,6 @@ class _TramiteSeguimientoScreenState extends State<TramiteSeguimientoScreen> {
       default:
         return 'PENDIENTE';
     }
-  }
-
-  Widget _buildPestanaSecciones() {
-    if (estado!.expediente.secciones.isEmpty) {
-      return const Center(
-        child: Padding(
-          padding: EdgeInsets.all(24.0),
-          child: Text('No hay secciones disponibles'),
-        ),
-      );
-    }
-
-    return Column(
-      children: estado!.expediente.secciones
-          .map(
-            (seccion) => Card(
-              margin: const EdgeInsets.only(bottom: 12),
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                seccion.nombre,
-                                style: const TextStyle(fontWeight: FontWeight.bold),
-                              ),
-                              if (seccion.departamento != null) ...[
-                                const SizedBox(height: 4),
-                                Text(
-                                  'Depto: ${seccion.departamento}',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: Colors.grey[600],
-                                  ),
-                                ),
-                              ],
-                            ],
-                          ),
-                        ),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 6,
-                          ),
-                          decoration: BoxDecoration(
-                            color: _getColorSeccion(seccion.estado),
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                          child: Text(
-                            _getTextoSeccion(seccion.estado),
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    if (seccion.fechaInicio != null) ...[
-                      const SizedBox(height: 12),
-                      Text(
-                        '📅 Inicio: ${_formatoFecha(seccion.fechaInicio!)}',
-                        style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-            ),
-          )
-          .toList(),
-    );
-  }
-
-  Widget _buildPestanaHistorial() {
-    if (estado!.historial.isEmpty) {
-      return const Center(
-        child: Padding(
-          padding: EdgeInsets.all(24.0),
-          child: Text('No hay eventos en el historial'),
-        ),
-      );
-    }
-
-    return Column(
-      children: estado!.historial
-          .asMap()
-          .entries
-          .map(
-            (entry) {
-              final evento = entry.value;
-              final esUltimo = entry.key == estado!.historial.length - 1;
-
-              return Padding(
-                padding: const EdgeInsets.only(bottom: 16.0),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Column(
-                      children: [
-                        Container(
-                          width: 40,
-                          height: 40,
-                          decoration: BoxDecoration(
-                            color: Colors.blue,
-                            shape: BoxShape.circle,
-                          ),
-                          child: Center(
-                            child: Text(
-                              tramitesSeguimientoService.getIconoEvento(evento.tipo),
-                              style: const TextStyle(fontSize: 20),
-                            ),
-                          ),
-                        ),
-                        if (!esUltimo)
-                          Container(
-                            width: 2,
-                            height: 30,
-                            color: Colors.grey.shade300,
-                          ),
-                      ],
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            evento.descripcion,
-                            style: const TextStyle(fontWeight: FontWeight.bold),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            _formatoFecha(evento.fecha),
-                            style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-                          ),
-                          if (evento.usuario != null) ...[
-                            const SizedBox(height: 2),
-                            Text(
-                              'Usuario: ${evento.usuario}',
-                              style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            },
-          )
-          .toList(),
-    );
-  }
-
-  Color _getColorSeccion(String estado) {
-    switch (estado) {
-      case 'Derivada':
-      case 'completada':
-        return Colors.green;
-      case 'En ejecucion':
-      case 'en_curso':
-        return Colors.blue;
-      case 'Pendiente de recepcion':
-        return Colors.lightBlue;
-      case 'Observado':
-      case 'observado':
-        return Colors.orange;
-      case 'Bloqueada':
-      case 'bloqueada':
-        return Colors.grey;
-      default:
-        return Colors.grey;
-    }
-  }
-
-  String _getTextoSeccion(String estado) {
-    const textos = {
-      'Derivada': 'Derivada',
-      'En ejecucion': 'En ejecución',
-      'Pendiente de recepcion': 'Pendiente de recepción',
-      'Observado': 'Observado',
-      'Bloqueada': 'Bloqueada',
-      // legacy
-      'completada': 'Completada',
-      'en_curso': 'En Curso',
-      'bloqueada': 'Bloqueada',
-    };
-    return textos[estado] ?? estado;
   }
 
   String _formatoFecha(String fecha) {

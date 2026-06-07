@@ -82,7 +82,7 @@ class TramitesService extends GetxService {
         print('✅ Política cargada: ${politicaActual.value?.nombre}');
         return politicaActual.value!;
       } else {
-        throw Exception('Error al obtener política');
+        throw Exception('Error al obtener política: ${response.statusCode}');
       }
     } catch (e) {
       print('❌ Error obteniendo política: $e');
@@ -112,7 +112,7 @@ class TramitesService extends GetxService {
         print('✅ ${actividades.length} actividades cargadas');
         return actividades;
       } else {
-        throw Exception('Error al obtener actividades');
+        throw Exception('Error al obtener actividades: ${response.statusCode}');
       }
     } catch (e) {
       print('❌ Error obteniendo actividades: $e');
@@ -135,7 +135,7 @@ class TramitesService extends GetxService {
         print('✅ Actividad cargada');
         return Actividad.fromJson(data);
       } else {
-        throw Exception('Error al obtener actividad');
+        throw Exception('Error al obtener actividad: ${response.statusCode}');
       }
     } catch (e) {
       print('❌ Error obteniendo actividad: $e');
@@ -162,7 +162,7 @@ class TramitesService extends GetxService {
         print('✅ ${departamentos.length} departamentos cargados');
         return departamentos;
       } else {
-        throw Exception('Error al obtener departamentos');
+        throw Exception('Error al obtener departamentos: ${response.statusCode}');
       }
     } catch (e) {
       print('❌ Error obteniendo departamentos: $e');
@@ -185,7 +185,7 @@ class TramitesService extends GetxService {
         print('✅ Departamento cargado');
         return Departamento.fromJson(data);
       } else {
-        throw Exception('Error al obtener departamento');
+        throw Exception('Error al obtener departamento: ${response.statusCode}');
       }
     } catch (e) {
       print('❌ Error obteniendo departamento: $e');

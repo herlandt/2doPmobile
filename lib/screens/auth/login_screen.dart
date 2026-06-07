@@ -4,6 +4,9 @@ import 'package:get/get.dart';
 import '../../models/auth_model.dart';
 import '../../services/auth_service.dart';
 import '../../mock/mock_data.dart';
+import '../../utils/error_messages.dart';
+import '../../theme/app_theme.dart';
+import '../../widgets/ui_kit.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({Key? key}) : super(key: key);
@@ -103,7 +106,7 @@ class _LoginScreenState extends State<LoginScreen> {
     } catch (e) {
       print('❌ Error en login: $e');
       setState(() {
-        _errorMessage = e.toString().replaceAll('Exception: ', '');
+        _errorMessage = mensajeAmigable(e);
       });
     } finally {
       if (mounted) {
@@ -117,152 +120,180 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Iniciar Sesión'),
-        elevation: 0,
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(24.0),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // Logo o título
-              const SizedBox(height: 40),
-              Text(
-                'Bienvenido',
-                textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
-              ),
-              const SizedBox(height: 16),
-              Text(
-                'Inicia sesión con tu cuenta',
-                textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.bodyMedium,
-              ),
-              const SizedBox(height: 32),
-
-              // Mensaje de error
-              if (_errorMessage != null)
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.red.shade50,
-                    border: Border.all(color: Colors.red.shade300),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    _errorMessage!,
-                    style: TextStyle(color: Colors.red.shade700),
-                  ),
-                ),
-              if (_errorMessage != null) const SizedBox(height: 16),
-
-              // Email field
-              TextFormField(
-                controller: _emailController,
-                enabled: !_isLoading,
-                keyboardType: TextInputType.emailAddress,
-                decoration: InputDecoration(
-                  labelText: 'Correo Electrónico',
-                  hintText: 'tu@email.com',
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  prefixIcon: const Icon(Icons.email),
-                ),
-                validator: _validateEmail,
-              ),
-              const SizedBox(height: 16),
-
-              // Password field
-              TextFormField(
-                controller: _passwordController,
-                enabled: !_isLoading,
-                obscureText: true,
-                decoration: InputDecoration(
-                  labelText: 'Contraseña',
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  prefixIcon: const Icon(Icons.lock),
-                ),
-                validator: _validatePassword,
-              ),
-              const SizedBox(height: 16),
-
-              // Botón de datos de prueba (solo en desarrollo)
-              OutlinedButton.icon(
-                onPressed: _isLoading ? null : _fillMockData,
-                icon: const Icon(Icons.autorenew),
-                label: const Text('Usar datos de prueba'),
-                style: OutlinedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 8),
-              Align(
-                alignment: Alignment.center,
-                child: Text(
-                  '(Cliente: cliente@cre.bo)',
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: Colors.grey,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-
-              // Login button
-              ElevatedButton(
-                onPressed: _isLoading ? null : _handleLogin,
-                style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                ),
-                child: _isLoading
-                    ? const SizedBox(
-                        height: 20,
-                        width: 20,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                        ),
-                      )
-                    : const Text(
-                        'Ingresar',
-                        style: TextStyle(fontSize: 16),
-                      ),
-              ),
-              const SizedBox(height: 16),
-
-              // Registro link
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(AppSpacing.lg),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 440),
+            child: Form(
+              key: _formKey,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  const Text('¿No tienes cuenta? '),
-                  GestureDetector(
-                    onTap: _isLoading ? null : () => Get.toNamed('/register'),
-                    child: Text(
-                      'Regístrate aquí',
-                      style: TextStyle(
-                        color: Theme.of(context).primaryColor,
-                        fontWeight: FontWeight.bold,
+                  const SizedBox(height: AppSpacing.xl),
+
+                  // Logo
+                  Center(
+                    child: Container(
+                      width: 76,
+                      height: 76,
+                      decoration: BoxDecoration(
+                        color: AppColors.primary.withOpacity(0.12),
+                        borderRadius: BorderRadius.circular(AppRadius.card),
                       ),
+                      child: const Icon(Icons.bolt_rounded,
+                          size: 40, color: AppColors.primary),
                     ),
+                  ),
+                  const SizedBox(height: AppSpacing.lg),
+
+                  // Título
+                  const Text(
+                    'Bienvenido',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 26,
+                      fontWeight: FontWeight.w800,
+                      color: Color(0xFF1D1B23),
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.xs),
+                  const Text(
+                    'Inicia sesión con tu cuenta',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 14, color: AppColors.textoSuave),
+                  ),
+                  const SizedBox(height: AppSpacing.lg),
+
+                  // Tarjeta central con el formulario
+                  AppCard(
+                    padding: const EdgeInsets.all(AppSpacing.lg),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        // Mensaje de error
+                        if (_errorMessage != null) ...[
+                          _ErrorBanner(mensaje: _errorMessage!),
+                          const SizedBox(height: AppSpacing.md),
+                        ],
+
+                        // Email field
+                        TextFormField(
+                          controller: _emailController,
+                          enabled: !_isLoading,
+                          keyboardType: TextInputType.emailAddress,
+                          decoration: const InputDecoration(
+                            labelText: 'Correo Electrónico',
+                            hintText: 'tu@email.com',
+                            prefixIcon: Icon(Icons.email_outlined),
+                          ),
+                          validator: _validateEmail,
+                        ),
+                        const SizedBox(height: AppSpacing.md),
+
+                        // Password field
+                        TextFormField(
+                          controller: _passwordController,
+                          enabled: !_isLoading,
+                          obscureText: true,
+                          decoration: const InputDecoration(
+                            labelText: 'Contraseña',
+                            prefixIcon: Icon(Icons.lock_outline),
+                          ),
+                          validator: _validatePassword,
+                        ),
+                        const SizedBox(height: AppSpacing.md),
+
+                        // Login button
+                        ElevatedButton(
+                          onPressed: _isLoading ? null : _handleLogin,
+                          child: _isLoading
+                              ? const SizedBox(
+                                  height: 20,
+                                  width: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    valueColor:
+                                        AlwaysStoppedAnimation(Colors.white),
+                                  ),
+                                )
+                              : const Text('Ingresar'),
+                        ),
+                        const SizedBox(height: AppSpacing.md),
+
+                        // Botón de datos de prueba (solo en desarrollo)
+                        OutlinedButton.icon(
+                          onPressed: _isLoading ? null : _fillMockData,
+                          icon: const Icon(Icons.autorenew),
+                          label: const Text('Usar datos de prueba'),
+                        ),
+                        const SizedBox(height: AppSpacing.sm),
+                        const Text(
+                          '(Cliente: cliente@cre.bo)',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                              fontSize: 11, color: AppColors.textoSuave),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.lg),
+
+                  // Registro link
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Text('¿No tienes cuenta? ',
+                          style: TextStyle(color: AppColors.textoSuave)),
+                      GestureDetector(
+                        onTap:
+                            _isLoading ? null : () => Get.toNamed('/register'),
+                        child: const Text(
+                          'Regístrate aquí',
+                          style: TextStyle(
+                            color: AppColors.primary,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
-            ],
+            ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// Banner de error con color semántico de peligro.
+class _ErrorBanner extends StatelessWidget {
+  final String mensaje;
+  const _ErrorBanner({required this.mensaje});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(AppSpacing.sm + 4),
+      decoration: BoxDecoration(
+        color: AppColors.peligro.withOpacity(0.08),
+        border: Border.all(color: AppColors.peligro.withOpacity(0.4)),
+        borderRadius: BorderRadius.circular(AppRadius.button),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.error_outline,
+              color: AppColors.peligro, size: 20),
+          const SizedBox(width: AppSpacing.sm),
+          Expanded(
+            child: Text(
+              mensaje,
+              style: const TextStyle(color: AppColors.peligro),
+            ),
+          ),
+        ],
       ),
     );
   }

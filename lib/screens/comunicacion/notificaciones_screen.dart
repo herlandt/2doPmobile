@@ -3,6 +3,9 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../../services/comunicacion_service.dart';
+import '../../utils/error_messages.dart';
+import '../../theme/app_theme.dart';
+import '../../widgets/ui_kit.dart';
 
 class NotificacionesScreen extends StatefulWidget {
   const NotificacionesScreen({Key? key}) : super(key: key);
@@ -29,7 +32,7 @@ class _NotificacionesScreenState extends State<NotificacionesScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error al obtener notificaciones: $e')),
+          SnackBar(content: Text(mensajeAmigable(e))),
         );
       }
     }
@@ -54,13 +57,13 @@ class _NotificacionesScreenState extends State<NotificacionesScreen> {
   Color _color(String tipo) {
     switch (tipo) {
       case 'asignacion':
-        return Colors.green;
+        return AppColors.exito;
       case 'observacion':
-        return Colors.orange;
+        return AppColors.observado;
       case 'sla_vencido':
-        return Colors.red;
+        return AppColors.peligro;
       default:
-        return Colors.blue;
+        return AppColors.compuerta;
     }
   }
 
@@ -83,8 +86,10 @@ class _NotificacionesScreenState extends State<NotificacionesScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
+            tooltip: 'Actualizar',
             onPressed: _cargar,
           ),
+          const SizedBox(width: AppSpacing.xs),
         ],
       ),
       body: Obx(() {
@@ -95,16 +100,15 @@ class _NotificacionesScreenState extends State<NotificacionesScreen> {
         final notifs = comunicacionService.notificaciones;
 
         if (notifs.isEmpty) {
-          return Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.notifications_none,
-                    size: 64, color: Colors.grey[400]),
-                const SizedBox(height: 16),
-                const Text(
-                  'No tienes notificaciones recientes.',
-                  style: TextStyle(color: Colors.grey, fontSize: 16),
+          return RefreshIndicator(
+            onRefresh: _cargar,
+            child: ListView(
+              children: const [
+                SizedBox(height: 120),
+                EmptyState(
+                  icon: Icons.notifications_none_rounded,
+                  titulo: 'Sin notificaciones',
+                  mensaje: 'No tienes notificaciones recientes.',
                 ),
               ],
             ),
@@ -114,61 +118,140 @@ class _NotificacionesScreenState extends State<NotificacionesScreen> {
         return RefreshIndicator(
           onRefresh: _cargar,
           child: ListView.separated(
+            padding: const EdgeInsets.fromLTRB(
+                AppSpacing.md, AppSpacing.md, AppSpacing.md, AppSpacing.xl),
             itemCount: notifs.length,
-            separatorBuilder: (_, __) => const Divider(height: 1),
+            separatorBuilder: (context, index) =>
+                const SizedBox(height: AppSpacing.sm),
             itemBuilder: (context, index) {
               final n = notifs[index];
               final leida = n['leida'] == true;
               final tipo = n['tipo'] as String? ?? '';
-
-              return Container(
-                color: leida
-                    ? Colors.transparent
-                    : Colors.blue.withOpacity(0.04),
-                child: ListTile(
-                  contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 16, vertical: 8),
-                  leading: CircleAvatar(
-                    backgroundColor: _color(tipo),
-                    child:
-                        Icon(_icono(tipo), color: Colors.white, size: 20),
-                  ),
-                  title: Text(
-                    n['titulo'] ?? 'Aviso',
-                    style: TextStyle(
-                      fontWeight:
-                          leida ? FontWeight.normal : FontWeight.bold,
-                    ),
-                  ),
-                  subtitle: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const SizedBox(height: 4),
-                      Text(n['mensaje'] ?? ''),
-                      const SizedBox(height: 4),
-                      Text(
-                        _formatearFecha(n['fechaCreacion']),
-                        style: const TextStyle(
-                            fontSize: 11, color: Colors.grey),
-                      ),
-                    ],
-                  ),
-                  trailing: leida
-                      ? null
-                      : Container(
-                          width: 8,
-                          height: 8,
-                          decoration: const BoxDecoration(
-                            color: Colors.blue,
-                            shape: BoxShape.circle,
-                          ),
-                        ),
-                ),
+              return _NotifCard(
+                color: _color(tipo),
+                icono: _icono(tipo),
+                titulo: n['titulo'] ?? 'Aviso',
+                mensaje: n['mensaje'] ?? '',
+                fecha: _formatearFecha(n['fechaCreacion']),
+                leida: leida,
               );
             },
           ),
         );
       }),
+    );
+  }
+}
+
+/// Tarjeta de una notificación. Las no-leídas se resaltan con un fondo sutil
+/// y un borde acentuado del color del tipo, además del punto indicador.
+class _NotifCard extends StatelessWidget {
+  final Color color;
+  final IconData icono;
+  final String titulo;
+  final String mensaje;
+  final String fecha;
+  final bool leida;
+
+  const _NotifCard({
+    required this.color,
+    required this.icono,
+    required this.titulo,
+    required this.mensaje,
+    required this.fecha,
+    required this.leida,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final card = AppCard(
+      background: leida ? AppColors.superficie : color.withOpacity(0.05),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.12),
+              borderRadius: BorderRadius.circular(AppRadius.sm),
+            ),
+            child: Icon(icono, color: color, size: 22),
+          ),
+          const SizedBox(width: AppSpacing.md),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        titulo,
+                        style: TextStyle(
+                          fontSize: 14.5,
+                          fontWeight:
+                              leida ? FontWeight.w600 : FontWeight.w800,
+                          color: const Color(0xFF1D1B23),
+                        ),
+                      ),
+                    ),
+                    if (!leida) ...[
+                      const SizedBox(width: AppSpacing.sm),
+                      Container(
+                        margin: const EdgeInsets.only(top: 5),
+                        width: 8,
+                        height: 8,
+                        decoration: BoxDecoration(
+                          color: color,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+                if (mensaje.isNotEmpty) ...[
+                  const SizedBox(height: AppSpacing.xs),
+                  Text(
+                    mensaje,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      color: Color(0xFF45424E),
+                      height: 1.3,
+                    ),
+                  ),
+                ],
+                if (fecha.isNotEmpty) ...[
+                  const SizedBox(height: AppSpacing.sm),
+                  Row(
+                    children: [
+                      const Icon(Icons.schedule,
+                          size: 13, color: AppColors.textoSuave),
+                      const SizedBox(width: 4),
+                      Text(
+                        fecha,
+                        style: const TextStyle(
+                            fontSize: 11.5, color: AppColors.textoSuave),
+                      ),
+                    ],
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+
+    // Resalte de no-leídas: borde acentuado del color del tipo.
+    if (leida) return card;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(AppRadius.card),
+        border: Border.all(color: color.withOpacity(0.45), width: 1.4),
+      ),
+      child: card,
     );
   }
 }

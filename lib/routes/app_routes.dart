@@ -3,6 +3,7 @@ import '../middlewares/auth_middleware.dart';
 import '../screens/auth/login_screen.dart';
 import '../screens/auth/register_screen.dart';
 import '../screens/home/home_screen.dart';
+import '../screens/profile/profile_screen.dart';
 // C1 — Trámites base
 import '../screens/tramites/tramites_lista_screen.dart';
 import '../screens/tramites/tramite_detalle_screen.dart';
@@ -12,9 +13,9 @@ import '../screens/tramites/tramite_seguimiento_screen.dart';
 // C2 — Registro y Subsanación
 import '../screens/tramites/catalogo_tramites_screen.dart';
 import '../screens/tramites/tramites_observados_screen.dart';
+import '../screens/tramites/tramites_pendientes_docs_screen.dart';
 import '../screens/tramites/subir_documento_screen.dart';
 // C3 — Línea de tiempo y Notificaciones
-import '../screens/tramites/detalle_linea_tiempo_screen.dart';
 import '../screens/comunicacion/notificaciones_screen.dart';
 // Parte 2
 import '../screens/tramites/iniciar_tramite_ia_screen.dart';
@@ -24,6 +25,7 @@ class AppRoutes {
   static const String register = '/register';
   static const String home = '/home';
   static const String splash = '/splash';
+  static const String perfil = '/perfil';
 
   // C1
   static const String tramites = '/tramites';
@@ -35,10 +37,10 @@ class AppRoutes {
   // C2
   static const String catalogoTramites = '/catalogo-tramites';
   static const String tramitesObservados = '/tramites-observados';
+  static const String tramitesPendientesDocs = '/tramites-pendientes-docs';
   static const String subirDocumento = '/subir-documento';
 
   // C3
-  static const String detalleLineaTiempo = '/detalle-linea-tiempo';
   static const String notificaciones = '/notificaciones';
 
   // Parte 2
@@ -58,6 +60,12 @@ class AppRoutes {
     GetPage(
       name: home,
       page: () => const HomeScreen(),
+      transition: Transition.fadeIn,
+      middlewares: [AuthMiddleware()],
+    ),
+    GetPage(
+      name: perfil,
+      page: () => const ProfileScreen(),
       transition: Transition.fadeIn,
       middlewares: [AuthMiddleware()],
     ),
@@ -108,6 +116,12 @@ class AppRoutes {
       middlewares: [AuthMiddleware()],
     ),
     GetPage(
+      name: tramitesPendientesDocs,
+      page: () => const TramitesPendientesDocsScreen(),
+      transition: Transition.fadeIn,
+      middlewares: [AuthMiddleware()],
+    ),
+    GetPage(
       name: subirDocumento,
       page: () => const SubirDocumentoScreen(),
       transition: Transition.rightToLeft,
@@ -115,18 +129,6 @@ class AppRoutes {
     ),
 
     // ── C3 ────────────────────────────────────────────────────────────────
-    GetPage(
-      name: detalleLineaTiempo,
-      page: () {
-        final args = Get.arguments as Map<String, dynamic>;
-        return DetalleLineaTiempoScreen(
-          tramiteId: args['tramiteId'],
-          codigo: args['codigo'],
-        );
-      },
-      transition: Transition.fadeIn,
-      middlewares: [AuthMiddleware()],
-    ),
     GetPage(
       name: notificaciones,
       page: () => const NotificacionesScreen(),

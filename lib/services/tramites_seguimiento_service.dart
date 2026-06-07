@@ -51,7 +51,7 @@ class TramitesSeguimientoService extends GetxService {
         return misTramites;
       } else {
         print('❌ Error: ${response.statusCode}');
-        throw Exception('Error al obtener trámites');
+        throw Exception('Error al obtener trámites: ${response.statusCode}');
       }
     } catch (e) {
       print('❌ Error obteniendo trámites: $e');
@@ -84,7 +84,7 @@ class TramitesSeguimientoService extends GetxService {
         return estadoActual.value!;
       } else {
         print('❌ Error: ${response.statusCode}');
-        throw Exception('Error al obtener estado del trámite');
+        throw Exception('Error al obtener estado del trámite: ${response.statusCode}');
       }
     } catch (e) {
       print('❌ Error obteniendo estado: $e');
@@ -276,7 +276,7 @@ class TramitesSeguimientoService extends GetxService {
       return json.decode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
     }
     if (response.statusCode == 404) return null;
-    throw Exception('No se pudo obtener la resolución del trámite');
+    throw Exception('No se pudo obtener la resolución del trámite: ${response.statusCode}');
   }
 
   /// C2 CU-17: Obtener expediente completo de un trámite
@@ -293,7 +293,7 @@ class TramitesSeguimientoService extends GetxService {
     if (response.statusCode == 200) {
       return json.decode(utf8.decode(response.bodyBytes));
     } else {
-      throw Exception('Error al cargar el expediente del trámite');
+      throw Exception('Error al cargar el expediente del trámite: ${response.statusCode}');
     }
   }
 
@@ -334,7 +334,7 @@ class TramitesSeguimientoService extends GetxService {
         .timeout(const Duration(seconds: 10));
 
     if (response.statusCode != 200 && response.statusCode != 201) {
-      throw Exception('Error al enviar la corrección al sistema.');
+      throw Exception('Error al enviar la corrección al sistema: ${response.statusCode}');
     }
     print('✅ Corrección enviada correctamente');
   }
@@ -356,7 +356,7 @@ class TramitesSeguimientoService extends GetxService {
     if (response.statusCode == 200) {
       return json.decode(utf8.decode(response.bodyBytes));
     } else {
-      throw Exception('No se pudo cargar la línea de tiempo del trámite.');
+      throw Exception('No se pudo cargar la línea de tiempo del trámite: ${response.statusCode}');
     }
   }
 
@@ -373,7 +373,7 @@ class TramitesSeguimientoService extends GetxService {
         .timeout(const Duration(seconds: 10));
 
     if (response.statusCode != 200) {
-      throw Exception('El trámite ya no puede ser cancelado en este momento.');
+      throw Exception('El trámite ya no puede ser cancelado en este momento (${response.statusCode}).');
     }
     print('✅ Trámite cancelado');
   }

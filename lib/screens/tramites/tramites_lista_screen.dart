@@ -2,9 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../../models/politica_model.dart';
 import '../../services/tramites_service.dart';
+import '../../utils/error_messages.dart';
+import '../../theme/app_theme.dart';
+import '../../widgets/ui_kit.dart';
 
+/// Trámites que el cliente PUEDE iniciar. Solo muestra políticas ACTIVAS:
+/// borrador/archivada son estados internos del admin, no "disponibles".
 class TramitesListaScreen extends StatefulWidget {
-  const TramitesListaScreen({Key? key}) : super(key: key);
+  const TramitesListaScreen({super.key});
 
   @override
   State<TramitesListaScreen> createState() => _TramitesListaScreenState();
@@ -12,73 +17,40 @@ class TramitesListaScreen extends StatefulWidget {
 
 class _TramitesListaScreenState extends State<TramitesListaScreen> {
   late TramitesService tramitesService;
-  String _filtroEstado = '';
   String _busqueda = '';
-
-  final List<String> _estadosDisponibles = ['activa', 'borrador', 'archivada'];
 
   @override
   void initState() {
     super.initState();
     tramitesService = Get.find<TramitesService>();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _cargarPoliticas();
-    });
+    WidgetsBinding.instance.addPostFrameCallback((_) => _cargarPoliticas());
   }
 
-  Future<void> _cargarPoliticas({String? estado}) async {
+  Future<void> _cargarPoliticas() async {
     try {
-      await tramitesService.obtenerPoliticas(estado: estado);
+      await tramitesService.obtenerPoliticas();
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: ${e.toString()}')),
+          SnackBar(content: Text(mensajeAmigable(e))),
         );
       }
     }
   }
 
+  /// Solo ACTIVAS + búsqueda por nombre/descripción.
   List<Politica> get _politicasFiltradas {
-    List<Politica> resultado = tramitesService.politicas;
-
-    // Filtrar por estado
-    if (_filtroEstado.isNotEmpty) {
-      resultado = resultado.where((p) => p.estado == _filtroEstado).toList();
-    }
-
-    // Filtrar por búsqueda
+    var resultado =
+        tramitesService.politicas.where((p) => p.estado == 'activa').toList();
     if (_busqueda.isNotEmpty) {
-      final termino = _busqueda.toLowerCase();
+      final t = _busqueda.toLowerCase();
       resultado = resultado
           .where((p) =>
-              p.nombre.toLowerCase().contains(termino) ||
-              p.descripcion.toLowerCase().contains(termino))
+              p.nombre.toLowerCase().contains(t) ||
+              p.descripcion.toLowerCase().contains(t))
           .toList();
     }
-
     return resultado;
-  }
-
-  String _getEstadoIcono(String estado) {
-    const iconos = {
-      'activa': '✓',
-      'borrador': '⚙',
-      'archivada': '📦',
-    };
-    return iconos[estado] ?? '•';
-  }
-
-  Color _getEstadoColor(String estado) {
-    switch (estado) {
-      case 'activa':
-        return Colors.green;
-      case 'borrador':
-        return Colors.orange;
-      case 'archivada':
-        return Colors.grey;
-      default:
-        return Colors.blue;
-    }
   }
 
   @override
@@ -86,117 +58,58 @@ class _TramitesListaScreenState extends State<TramitesListaScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Trámites Disponibles'),
-        elevation: 0,
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
-            onPressed: () => _cargarPoliticas(),
+            tooltip: 'Actualizar',
+            onPressed: _cargarPoliticas,
           ),
+          const SizedBox(width: AppSpacing.xs),
         ],
       ),
       body: Column(
         children: [
-          // Filtros
+          // Búsqueda
           Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Búsqueda
-                TextField(
-                  onChanged: (value) {
-                    setState(() {
-                      _busqueda = value;
-                    });
-                  },
-                  decoration: InputDecoration(
-                    labelText: 'Buscar trámite',
-                    prefixIcon: const Icon(Icons.search),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 12),
-
-                // Filtro por estado
-                DropdownButton<String>(
-                  isExpanded: true,
-                  value: _filtroEstado.isEmpty ? null : _filtroEstado,
-                  hint: const Text('Filtrar por estado'),
-                  items: [
-                    const DropdownMenuItem(
-                      value: '',
-                      child: Text('Todos los estados'),
-                    ),
-                    ..._estadosDisponibles.map((estado) {
-                      return DropdownMenuItem(
-                        value: estado,
-                        child: Text('${_getEstadoIcono(estado)} ${estado.toUpperCase()}'),
-                      );
-                    }),
-                  ],
-                  onChanged: (value) {
-                    setState(() {
-                      _filtroEstado = value ?? '';
-                    });
-                    if (value != null && value.isNotEmpty) {
-                      _cargarPoliticas(estado: value);
-                    } else {
-                      _cargarPoliticas();
-                    }
-                  },
-                ),
-              ],
+            padding: const EdgeInsets.fromLTRB(
+                AppSpacing.md, AppSpacing.sm, AppSpacing.md, AppSpacing.sm),
+            child: TextField(
+              onChanged: (v) => setState(() => _busqueda = v),
+              decoration: const InputDecoration(
+                labelText: 'Buscar trámite',
+                prefixIcon: Icon(Icons.search),
+              ),
             ),
           ),
 
-          // Lista de trámites
+          // Lista
           Expanded(
-            child: Obx(
-              () {
-                if (tramitesService.isLoading.value) {
-                  return const Center(
-                    child: CircularProgressIndicator(),
-                  );
-                }
-
-                if (_politicasFiltradas.isEmpty) {
-                  return Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Icon(
-                          Icons.inbox,
-                          size: 64,
-                          color: Colors.grey,
-                        ),
-                        const SizedBox(height: 16),
-                        const Text(
-                          'No hay trámites disponibles',
-                          style: TextStyle(color: Colors.grey, fontSize: 16),
-                        ),
-                        const SizedBox(height: 8),
-                        if (_busqueda.isNotEmpty || _filtroEstado.isNotEmpty)
-                          const Text(
-                            'Intenta cambiar los filtros',
-                            style: TextStyle(color: Colors.grey, fontSize: 12),
-                          ),
-                      ],
-                    ),
-                  );
-                }
-
-                return ListView.builder(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  itemCount: _politicasFiltradas.length,
-                  itemBuilder: (context, index) {
-                    final politica = _politicasFiltradas[index];
-                    return _buildTramiteCard(politica);
-                  },
+            child: Obx(() {
+              if (tramitesService.isLoading.value) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              final lista = _politicasFiltradas;
+              if (lista.isEmpty) {
+                return EmptyState(
+                  icon: Icons.inbox_outlined,
+                  titulo: 'No hay trámites disponibles',
+                  mensaje: _busqueda.isNotEmpty
+                      ? 'Prueba con otra búsqueda'
+                      : 'Vuelve a intentar más tarde',
+                  accion: ElevatedButton.icon(
+                    onPressed: _cargarPoliticas,
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('Reintentar'),
+                  ),
                 );
-              },
-            ),
+              }
+              return ListView.builder(
+                padding: const EdgeInsets.fromLTRB(
+                    AppSpacing.md, 0, AppSpacing.md, AppSpacing.lg),
+                itemCount: lista.length,
+                itemBuilder: (context, i) => _buildTramiteCard(lista[i]),
+              );
+            }),
           ),
         ],
       ),
@@ -204,134 +117,98 @@ class _TramitesListaScreenState extends State<TramitesListaScreen> {
   }
 
   Widget _buildTramiteCard(Politica politica) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      child: InkWell(
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+      child: AppCard(
         onTap: () => Get.toNamed('/tramite-detalle', arguments: politica.id),
-        child: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Encabezado: Título y Estado
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          politica.nombre,
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          politica.descripcion,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: Colors.grey,
-                            fontSize: 13,
-                          ),
-                        ),
-                      ],
-                    ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: AppColors.compuerta.withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(AppRadius.sm),
                   ),
-                  const SizedBox(width: 12),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 6,
-                    ),
-                    decoration: BoxDecoration(
-                      color: _getEstadoColor(politica.estado).withOpacity(0.2),
-                      border: Border.all(
-                        color: _getEstadoColor(politica.estado),
+                  child: const Icon(Icons.description,
+                      color: AppColors.compuerta, size: 24),
+                ),
+                const SizedBox(width: AppSpacing.md),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        politica.nombre,
+                        style: const TextStyle(
+                            fontSize: 15.5, fontWeight: FontWeight.w700),
                       ),
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    child: Text(
-                      politica.estado.toUpperCase(),
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.bold,
-                        color: _getEstadoColor(politica.estado),
+                      const SizedBox(height: 2),
+                      Text(
+                        politica.descripcion,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                            color: AppColors.textoSuave, fontSize: 13),
                       ),
-                    ),
+                    ],
                   ),
-                ],
-              ),
-              const SizedBox(height: 12),
-
-              // Información
-              Row(
-                children: [
-                  Icon(Icons.schedule, size: 16, color: Colors.grey[600]),
+                ),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            Row(
+              children: [
+                const Icon(Icons.schedule,
+                    size: 15, color: AppColors.textoSuave),
+                const SizedBox(width: 6),
+                Text(
+                  '${politica.duracionDiasLimite} días límite',
+                  style: const TextStyle(
+                      fontSize: 12, color: AppColors.textoSuave),
+                ),
+                if (politica.requiereAprobacion) ...[
+                  const SizedBox(width: AppSpacing.md),
+                  const Icon(Icons.verified,
+                      size: 15, color: AppColors.compuerta),
                   const SizedBox(width: 6),
-                  Text(
-                    '${politica.duracionDiasLimite} días límite',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.grey[600],
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  if (politica.requiereAprobacion)
-                    Expanded(
-                      child: Row(
-                        children: [
-                          Icon(Icons.verified, size: 16, color: Colors.blue[600]),
-                          const SizedBox(width: 6),
-                          Text(
-                            'Requiere aprobación',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.blue[600],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                ],
-              ),
-              const SizedBox(height: 12),
-
-              // Botones
-              Row(
-                children: [
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: politica.estado == 'activa'
-                          ? () => Get.toNamed(
-                                '/tramite-nuevo',
-                                arguments: politica.id,
-                              )
-                          : null,
-                      style: ElevatedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 8),
-                      ),
-                      child: const Text('Iniciar Trámite'),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: () =>
-                          Get.toNamed('/tramite-detalle', arguments: politica.id),
-                      style: OutlinedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 8),
-                      ),
-                      child: const Text('Ver Detalles'),
-                    ),
+                  const Text(
+                    'Requiere aprobación',
+                    style: TextStyle(fontSize: 12, color: AppColors.compuerta),
                   ),
                 ],
-              ),
-            ],
-          ),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.md),
+            Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: () =>
+                        Get.toNamed('/tramite-nuevo', arguments: politica.id),
+                    style: ElevatedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                    ),
+                    child: const Text('Iniciar Trámite'),
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.sm),
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () => Get.toNamed('/tramite-detalle',
+                        arguments: politica.id),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                    ),
+                    child: const Text('Ver Detalles'),
+                  ),
+                ),
+              ],
+            ),
+          ],
         ),
       ),
     );

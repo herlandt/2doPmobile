@@ -72,11 +72,47 @@ class Politica {
   }
 }
 
+/// Un documento requerido (el backend lo envía como objeto
+/// {id, nombre, descripcion, proveedor, obligatorio}).
+class DocumentoRequerido {
+  final String id;
+  final String nombre;
+  final String descripcion;
+  final String? proveedor; // 'CLIENTE' | 'FUNCIONARIO'
+  final bool obligatorio;
+
+  const DocumentoRequerido({
+    required this.id,
+    required this.nombre,
+    required this.descripcion,
+    this.proveedor,
+    this.obligatorio = false,
+  });
+
+  /// ¿Es un requisito que debe aportar el CLIENTE? (tolerante a mayúsculas)
+  bool get esCliente => (proveedor ?? '').toUpperCase() == 'CLIENTE';
+
+  /// Tolerante: el backend manda objetos, pero si alguna vez llegara un String
+  /// lo tomamos como el nombre (para no romper el parseo de toda la lista).
+  factory DocumentoRequerido.fromJson(dynamic json) {
+    if (json is Map<String, dynamic>) {
+      return DocumentoRequerido(
+        id: json['id']?.toString() ?? '',
+        nombre: json['nombre']?.toString() ?? '',
+        descripcion: json['descripcion']?.toString() ?? '',
+        proveedor: json['proveedor']?.toString(),
+        obligatorio: json['obligatorio'] == true,
+      );
+    }
+    return DocumentoRequerido(id: '', nombre: json?.toString() ?? '', descripcion: '');
+  }
+}
+
 /// Documentos requeridos de una actividad (para vista general de la política)
 class ActividadDocumentos {
   final String actividadId;
   final String actividadNombre;
-  final List<String> documentosRequeridos;
+  final List<DocumentoRequerido> documentosRequeridos;
 
   ActividadDocumentos({
     required this.actividadId,
@@ -89,7 +125,9 @@ class ActividadDocumentos {
       // M1: null-safe (mismo motivo que en Politica.fromJson).
       actividadId: json['actividadId']?.toString() ?? '',
       actividadNombre: json['actividadNombre']?.toString() ?? '',
-      documentosRequeridos: List<String>.from(json['documentosRequeridos'] as List? ?? []),
+      documentosRequeridos: (json['documentosRequeridos'] as List? ?? [])
+          .map((e) => DocumentoRequerido.fromJson(e))
+          .toList(),
     );
   }
 }

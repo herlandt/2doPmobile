@@ -5,9 +5,11 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../services/comunicacion_service.dart';
+import '../routes/app_routes.dart';
+import '../theme/app_theme.dart';
 
 class ChatAgenteIA extends StatefulWidget {
-  // Si se omiten, el chat deduce el contexto desde el routing actual (Get.currentRoute / Get.arguments).
+  // Si se omiten, el chat deduce el contexto desde el routing actual.
   final String? pantallaActual;
   final String? tramiteIdOpcional;
 
@@ -39,7 +41,8 @@ class _ChatAgenteIAState extends State<ChatAgenteIA> {
     _tramiteId = widget.tramiteIdOpcional ?? _extraerTramiteIdDeArgs();
     _mensajes.add(_Mensaje(
       texto:
-          '¡Hola! Soy tu asistente virtual. Estás en "$_modulo". ¿En qué te puedo ayudar?',
+          '¡Hola! Soy tu asistente virtual. Puedo guiarte por tus trámites, '
+          'documentos y notificaciones. ¿En qué te ayudo?',
       esCliente: false,
     ));
   }
@@ -90,16 +93,43 @@ class _ChatAgenteIAState extends State<ChatAgenteIA> {
         esCliente: false,
         accionLabel: accion is Map ? accion['label'] as String? : null,
         accionRuta: accion is Map ? accion['ruta'] as String? : null,
+        accionTipo: accion is Map ? accion['tipo'] as String? : null,
+        accionDato: accion is Map ? accion['dato'] as String? : null,
       ));
       _esperando = false;
     });
     _scrollAbajo();
   }
 
-  void _ejecutarAccion(String? ruta) {
-    if (ruta == null || ruta.isEmpty) return;
-    Navigator.pop(context);
-    Get.toNamed(ruta);
+  /// El agente devuelve rutas del WEB (/cliente/...). Las traducimos a las del
+  /// móvil; si no hay equivalente, devolvemos null (y se oculta el botón).
+  String? _rutaMovil(String? rutaWeb) {
+    if (rutaWeb == null || rutaWeb.isEmpty) return null;
+    final r = rutaWeb.toLowerCase();
+    if (r.contains('notif')) return AppRoutes.notificaciones;
+    if (r.contains('perfil') || r.contains('cuenta')) return AppRoutes.perfil;
+    if (r.contains('catalogo') || r.contains('nuevo') || r.contains('iniciar')) {
+      return AppRoutes.catalogoTramites;
+    }
+    if (r.contains('tramite') || r.contains('expediente')) {
+      return AppRoutes.misTramites;
+    }
+    return null;
+  }
+
+  void _ejecutarAccion(_Mensaje m) {
+    // Recomendación: iniciar directamente el trámite sugerido (con su id).
+    if (m.accionTipo == 'iniciar' &&
+        m.accionDato != null &&
+        m.accionDato!.isNotEmpty) {
+      Get.back();
+      Get.toNamed('/tramite-nuevo', arguments: m.accionDato);
+      return;
+    }
+    final mapeada = _rutaMovil(m.accionRuta);
+    if (mapeada == null) return;
+    Get.back();
+    Get.toNamed(mapeada);
   }
 
   void _scrollAbajo() {
@@ -117,36 +147,53 @@ class _ChatAgenteIAState extends State<ChatAgenteIA> {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: MediaQuery.of(context).size.height * 0.75,
+      height: MediaQuery.of(context).size.height * 0.78,
       decoration: const BoxDecoration(
-        color: Colors.white,
+        color: AppColors.superficie,
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       child: Column(
         children: [
           // Cabecera
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
             decoration: const BoxDecoration(
-              color: Colors.indigo,
+              color: AppColors.ia,
               borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
             ),
             child: Row(
               children: [
-                const Icon(Icons.smart_toy, color: Colors.white),
-                const SizedBox(width: 10),
-                const Text(
-                  'Asistente de Soporte',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 17,
-                    fontWeight: FontWeight.bold,
+                Container(
+                  width: 34,
+                  height: 34,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(10),
                   ),
+                  child: const Icon(Icons.smart_toy, color: Colors.white, size: 20),
+                ),
+                const SizedBox(width: 10),
+                const Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Asistente virtual',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    Text(
+                      'Te ayuda con tus trámites',
+                      style: TextStyle(color: Colors.white70, fontSize: 11.5),
+                    ),
+                  ],
                 ),
                 const Spacer(),
                 IconButton(
                   icon: const Icon(Icons.close, color: Colors.white),
-                  onPressed: () => Navigator.pop(context),
+                  onPressed: () => Get.back(),
                 ),
               ],
             ),
@@ -156,26 +203,21 @@ class _ChatAgenteIAState extends State<ChatAgenteIA> {
           Expanded(
             child: ListView.builder(
               controller: _scroll,
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.all(AppSpacing.md),
               itemCount: _mensajes.length,
-              itemBuilder: (context, i) {
-                final m = _mensajes[i];
-                return _buildBurbuja(m);
-              },
+              itemBuilder: (context, i) => _buildBurbuja(_mensajes[i]),
             ),
           ),
 
-          // Indicador escribiendo
           if (_esperando)
-            Padding(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 16, vertical: 4),
               child: Align(
                 alignment: Alignment.centerLeft,
                 child: Text(
-                  'El asistente está escribiendo...',
+                  'El asistente está escribiendo…',
                   style: TextStyle(
-                      color: Colors.grey[600],
+                      color: AppColors.textoSuave,
                       fontSize: 12,
                       fontStyle: FontStyle.italic),
                 ),
@@ -185,10 +227,9 @@ class _ChatAgenteIAState extends State<ChatAgenteIA> {
           // Input
           Container(
             padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.grey.shade50,
-              border: Border(
-                  top: BorderSide(color: Colors.grey.shade200)),
+            decoration: const BoxDecoration(
+              color: AppColors.fondo,
+              border: Border(top: BorderSide(color: AppColors.borde)),
             ),
             child: Row(
               children: [
@@ -196,7 +237,7 @@ class _ChatAgenteIAState extends State<ChatAgenteIA> {
                   child: TextField(
                     controller: _ctrl,
                     decoration: InputDecoration(
-                      hintText: 'Escribe tu consulta...',
+                      hintText: 'Escribe tu consulta…',
                       contentPadding: const EdgeInsets.symmetric(
                           horizontal: 16, vertical: 10),
                       border: OutlineInputBorder(
@@ -204,7 +245,7 @@ class _ChatAgenteIAState extends State<ChatAgenteIA> {
                         borderSide: BorderSide.none,
                       ),
                       filled: true,
-                      fillColor: Colors.white,
+                      fillColor: AppColors.superficie,
                     ),
                     onSubmitted: (_) => _enviar(),
                     textInputAction: TextInputAction.send,
@@ -213,7 +254,7 @@ class _ChatAgenteIAState extends State<ChatAgenteIA> {
                 const SizedBox(width: 8),
                 CircleAvatar(
                   backgroundColor:
-                      _esperando ? Colors.grey : Colors.indigo,
+                      _esperando ? AppColors.textoSuave : AppColors.ia,
                   child: IconButton(
                     icon: const Icon(Icons.send, color: Colors.white, size: 18),
                     onPressed: _esperando ? null : _enviar,
@@ -228,9 +269,13 @@ class _ChatAgenteIAState extends State<ChatAgenteIA> {
   }
 
   Widget _buildBurbuja(_Mensaje m) {
+    final esIniciar =
+        m.accionTipo == 'iniciar' && (m.accionDato?.isNotEmpty ?? false);
+    final mostrarAccion = !m.esCliente &&
+        m.accionLabel != null &&
+        (esIniciar || _rutaMovil(m.accionRuta) != null);
     return Align(
-      alignment:
-          m.esCliente ? Alignment.centerRight : Alignment.centerLeft,
+      alignment: m.esCliente ? Alignment.centerRight : Alignment.centerLeft,
       child: Column(
         crossAxisAlignment:
             m.esCliente ? CrossAxisAlignment.end : CrossAxisAlignment.start,
@@ -241,7 +286,9 @@ class _ChatAgenteIAState extends State<ChatAgenteIA> {
             constraints: BoxConstraints(
                 maxWidth: MediaQuery.of(context).size.width * 0.72),
             decoration: BoxDecoration(
-              color: m.esCliente ? Colors.blue.shade100 : Colors.grey.shade200,
+              color: m.esCliente
+                  ? AppColors.primary.withOpacity(0.1)
+                  : const Color(0xFFF0EEF7),
               borderRadius: BorderRadius.only(
                 topLeft: const Radius.circular(16),
                 topRight: const Radius.circular(16),
@@ -251,17 +298,18 @@ class _ChatAgenteIAState extends State<ChatAgenteIA> {
             ),
             child: Text(m.texto, style: const TextStyle(fontSize: 14)),
           ),
-          if (!m.esCliente && m.accionLabel != null && m.accionRuta != null)
+          if (mostrarAccion)
             Padding(
               padding: const EdgeInsets.only(bottom: 10),
               child: OutlinedButton.icon(
                 icon: const Icon(Icons.arrow_forward, size: 14),
                 label: Text(m.accionLabel!),
-                onPressed: () => _ejecutarAccion(m.accionRuta),
+                onPressed: () => _ejecutarAccion(m),
                 style: OutlinedButton.styleFrom(
-                  foregroundColor: Colors.indigo,
-                  side: const BorderSide(color: Colors.indigo),
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                  foregroundColor: AppColors.ia,
+                  side: const BorderSide(color: AppColors.ia),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                 ),
               ),
             ),
@@ -276,10 +324,14 @@ class _Mensaje {
   final bool esCliente;
   final String? accionLabel;
   final String? accionRuta;
+  final String? accionTipo;
+  final String? accionDato;
   _Mensaje({
     required this.texto,
     required this.esCliente,
     this.accionLabel,
     this.accionRuta,
+    this.accionTipo,
+    this.accionDato,
   });
 }

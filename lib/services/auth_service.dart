@@ -80,7 +80,7 @@ class AuthService extends GetxService {
       } else {
         final errorMsg =
             jsonDecode(utf8.decode(response.bodyBytes))['message'] ??
-                'Error al iniciar sesión';
+                'Error al iniciar sesión (${response.statusCode})';
         print('❌ Error: $errorMsg');
         throw Exception(errorMsg);
       }
@@ -113,11 +113,61 @@ class AuthService extends GetxService {
       } else {
         throw Exception(
           jsonDecode(utf8.decode(response.bodyBytes))['message'] ??
-              'Error al registrarse',
+              'Error al registrarse (${response.statusCode})',
         );
       }
     } catch (e) {
       rethrow;
+    }
+  }
+
+  /// Actualizar el perfil propio (PUT /usuarios/me).
+  /// El backend NO cambia email/tipo/rol/password con este endpoint.
+  /// Actualiza [usuarioActual] con la respuesta del servidor.
+  Future<Usuario> actualizarPerfil({
+    required String nombre,
+    required String apellido,
+    required String telefono,
+    required String dni,
+    required String direccion,
+  }) async {
+    final token = getToken();
+    if (token == null) {
+      throw Exception('No hay sesión activa');
+    }
+
+    final response = await http
+        .put(
+          Uri.parse('${Environment.apiUrl}/usuarios/me'),
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer $token',
+          },
+          body: jsonEncode({
+            'nombre': nombre,
+            'apellido': apellido,
+            'telefono': telefono,
+            'dni': dni,
+            'direccion': direccion,
+          }),
+        )
+        .timeout(const Duration(seconds: 10));
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(utf8.decode(response.bodyBytes));
+      final usuario = Usuario.fromJson(data);
+      usuarioActual.value = usuario;
+      await storageService.saveUserData(jsonEncode(usuario.toJson()));
+      return usuario;
+    } else if (response.statusCode == 401) {
+      throw Exception('Sesión expirada. Inicia sesión de nuevo.');
+    } else {
+      final body = utf8.decode(response.bodyBytes);
+      String msg = 'Error al actualizar el perfil (${response.statusCode})';
+      try {
+        msg = jsonDecode(body)['message'] ?? msg;
+      } catch (_) {}
+      throw Exception(msg);
     }
   }
 
@@ -152,7 +202,7 @@ class AuthService extends GetxService {
         logout();
         return null;
       } else {
-        throw Exception('Error al obtener datos del usuario');
+        throw Exception('Error al obtener datos del usuario: ${response.statusCode}');
       }
     } catch (e) {
       // Error de red (timeout/conexión): no borramos la sesión ni el token,

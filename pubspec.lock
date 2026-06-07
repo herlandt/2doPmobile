@@ -604,10 +604,10 @@ packages:
     dependency: transitive
     description:
       name: record_android
-      sha256: eb1732e42d0d2a1895b8db86e4fc917287e6d8491b6ed59918aea8bed6c69de4
+      sha256: "9aaf3f151e61399b09bd7c31eb5f78253d2962b3f57af019ac5a2d1a3afdcf71"
       url: "https://pub.dev"
     source: hosted
-    version: "1.5.2"
+    version: "1.4.5"
   record_darwin:
     dependency: transitive
     description:
@@ -617,12 +617,11 @@ packages:
     source: hosted
     version: "1.2.2"
   record_linux:
-    dependency: transitive
+    dependency: "direct overridden"
     description:
-      name: record_linux
-      sha256: "74d41a9ebb1eb498a38e9a813dd524e8f0b4fdd627270bda9756f437b110a3e3"
-      url: "https://pub.dev"
-    source: hosted
+      path: "tool/record_linux_stub"
+      relative: true
+    source: path
     version: "0.7.2"
   record_platform_interface:
     dependency: transitive

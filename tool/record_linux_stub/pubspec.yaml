@@ -1,0 +1,24 @@
+name: record_linux
+description: >-
+  Stub local de record_linux para esta app. Linux NO es plataforma objetivo;
+  el record_linux 0.7.2 publicado no implementa la interfaz (startStream) y
+  rompe el build. Este paquete solo necesita COMPILAR — nunca se ejecuta.
+version: 0.7.2
+homepage: https://github.com/llfbandit/record/tree/master/record_linux
+publish_to: 'none'
+
+environment:
+  sdk: ^3.3.0
+  flutter: ">=3.16.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  record_platform_interface: ^1.0.2
+
+flutter:
+  plugin:
+    implements: record
+    platforms:
+      linux:
+        dartPluginClass: RecordLinux
