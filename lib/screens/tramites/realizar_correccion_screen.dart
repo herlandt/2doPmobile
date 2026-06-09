@@ -7,6 +7,7 @@
 
 import 'dart:io';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:image_picker/image_picker.dart';
@@ -224,6 +225,19 @@ class _RealizarCorreccionScreenState extends State<RealizarCorreccionScreen> {
                 );
               },
             ),
+            ListTile(
+              leading: const Icon(Icons.insert_drive_file),
+              title: const Text('Subir archivo (PDF/Word)'),
+              onTap: () {
+                Navigator.pop(context);
+                _seleccionarArchivoYSubir(
+                  claveSpinner: claveSpinner,
+                  documentoNombre: documentoNombre,
+                  documentoRequeridoId: documentoRequeridoId,
+                  corrigeDocumentoId: corrigeDocumentoId,
+                );
+              },
+            ),
           ],
         ),
       ),
@@ -237,8 +251,7 @@ class _RealizarCorreccionScreenState extends State<RealizarCorreccionScreen> {
     String? documentoRequeridoId,
     String? corrigeDocumentoId,
   }) async {
-    final actividadId = _actividadId;
-    if (actividadId == null) return;
+    if (_actividadId == null) return;
 
     final XFile? picked = await _picker.pickImage(
       source: fuente,
@@ -247,13 +260,59 @@ class _RealizarCorreccionScreenState extends State<RealizarCorreccionScreen> {
     );
     if (picked == null) return;
 
+    await _subirFile(
+      File(picked.path),
+      claveSpinner: claveSpinner,
+      documentoNombre: documentoNombre,
+      documentoRequeridoId: documentoRequeridoId,
+      corrigeDocumentoId: corrigeDocumentoId,
+    );
+  }
+
+  /// Abre el selector de archivos (PDF/Word/imagen) y sube el archivo elegido
+  /// por el MISMO flujo que la imagen.
+  Future<void> _seleccionarArchivoYSubir({
+    required String claveSpinner,
+    required String documentoNombre,
+    String? documentoRequeridoId,
+    String? corrigeDocumentoId,
+  }) async {
+    if (_actividadId == null) return;
+
+    final res = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['pdf', 'doc', 'docx', 'jpg', 'jpeg', 'png'],
+    );
+    if (res == null || res.files.single.path == null) return;
+
+    await _subirFile(
+      File(res.files.single.path!),
+      claveSpinner: claveSpinner,
+      documentoNombre: documentoNombre,
+      documentoRequeridoId: documentoRequeridoId,
+      corrigeDocumentoId: corrigeDocumentoId,
+    );
+  }
+
+  /// Sube un [archivo] ya elegido (imagen o documento) al backend. Es el flujo
+  /// común que comparten la cámara/galería y el selector de archivos.
+  Future<void> _subirFile(
+    File archivo, {
+    required String claveSpinner,
+    required String documentoNombre,
+    String? documentoRequeridoId,
+    String? corrigeDocumentoId,
+  }) async {
+    final actividadId = _actividadId;
+    if (actividadId == null) return;
+
     if (mounted) setState(() => _subiendoId = claveSpinner);
     try {
       await adjuntosService.subirAdjunto(
         tramiteId: widget.tramite.id,
         actividadId: actividadId,
         documentoNombre: documentoNombre,
-        archivo: File(picked.path),
+        archivo: archivo,
         documentoRequeridoId: documentoRequeridoId,
         corrigeDocumentoId: corrigeDocumentoId,
       );

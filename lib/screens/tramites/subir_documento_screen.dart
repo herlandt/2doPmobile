@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:image_picker/image_picker.dart';
@@ -70,6 +71,25 @@ class _SubirDocumentoScreenState extends State<SubirDocumentoScreen> {
       maxWidth: 1920,
     );
     if (picked != null) setState(() => _imagenSeleccionada = File(picked.path));
+  }
+
+  /// Abre el selector de archivos (PDF/Word/imagen) y lo deja seleccionado para
+  /// subir por el MISMO flujo (`_subir`) que la imagen.
+  Future<void> _seleccionarArchivo() async {
+    final res = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['pdf', 'doc', 'docx', 'jpg', 'jpeg', 'png'],
+    );
+    if (res != null && res.files.single.path != null) {
+      final file = File(res.files.single.path!);
+      setState(() => _imagenSeleccionada = file);
+    }
+  }
+
+  /// True si la ruta termina en una extensión de imagen mostrable con Image.file.
+  bool _esImagen(String path) {
+    final p = path.toLowerCase();
+    return p.endsWith('.jpg') || p.endsWith('.jpeg') || p.endsWith('.png');
   }
 
   Future<void> _subir() async {
@@ -243,13 +263,36 @@ class _SubirDocumentoScreenState extends State<SubirDocumentoScreen> {
                     ),
                   ),
                   child: _imagenSeleccionada != null
-                      ? ClipRRect(
-                          borderRadius: BorderRadius.circular(AppRadius.card),
-                          child: Image.file(
-                            _imagenSeleccionada!,
-                            fit: BoxFit.contain,
-                          ),
-                        )
+                      ? (_esImagen(_imagenSeleccionada!.path)
+                          ? ClipRRect(
+                              borderRadius:
+                                  BorderRadius.circular(AppRadius.card),
+                              child: Image.file(
+                                _imagenSeleccionada!,
+                                fit: BoxFit.contain,
+                              ),
+                            )
+                          : Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                const Icon(Icons.insert_drive_file,
+                                    size: 64, color: AppColors.primary),
+                                const SizedBox(height: AppSpacing.md),
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: AppSpacing.md),
+                                  child: Text(
+                                    _imagenSeleccionada!.path
+                                        .split(Platform.pathSeparator)
+                                        .last,
+                                    textAlign: TextAlign.center,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(fontSize: 13),
+                                  ),
+                                ),
+                              ],
+                            ))
                       : Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
@@ -267,7 +310,7 @@ class _SubirDocumentoScreenState extends State<SubirDocumentoScreen> {
                             ),
                             const SizedBox(height: AppSpacing.md),
                             const Text(
-                              'Toca para seleccionar imagen',
+                              'Toca para seleccionar archivo',
                               style: TextStyle(
                                   color: AppColors.textoSuave, fontSize: 14),
                             ),
@@ -380,6 +423,14 @@ class _SubirDocumentoScreenState extends State<SubirDocumentoScreen> {
               onTap: () {
                 Navigator.pop(context);
                 _seleccionarImagen(ImageSource.gallery);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.insert_drive_file),
+              title: const Text('Subir archivo (PDF/Word)'),
+              onTap: () {
+                Navigator.pop(context);
+                _seleccionarArchivo();
               },
             ),
           ],

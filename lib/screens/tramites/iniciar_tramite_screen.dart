@@ -6,6 +6,7 @@
 // documentos -> el trámite arranca SIN quedar en compuerta.
 
 import 'dart:io';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:image_picker/image_picker.dart';
@@ -90,6 +91,14 @@ class _IniciarTramiteScreenState extends State<IniciarTramiteScreen> {
   bool get _todosAdjuntados =>
       _requisitos.every((r) => _adjuntos.containsKey(r.id));
 
+  /// True si la ruta termina en una extensión de imagen mostrable con Image.file.
+  bool _esImagen(String path) {
+    final p = path.toLowerCase();
+    return p.endsWith('.jpg') ||
+        p.endsWith('.jpeg') ||
+        p.endsWith('.png');
+  }
+
   Future<void> _seleccionarImagen(
       DocumentoRequerido req, ImageSource fuente) async {
     final XFile? picked = await _picker.pickImage(
@@ -99,6 +108,19 @@ class _IniciarTramiteScreenState extends State<IniciarTramiteScreen> {
     );
     if (picked != null && mounted) {
       setState(() => _adjuntos[req.id] = File(picked.path));
+    }
+  }
+
+  /// Abre el selector de archivos (PDF/Word/imagen) y guarda el archivo elegido
+  /// en `_adjuntos`, igual que `_seleccionarImagen`.
+  Future<void> _seleccionarArchivo(DocumentoRequerido req) async {
+    final res = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['pdf', 'doc', 'docx', 'jpg', 'jpeg', 'png'],
+    );
+    if (res != null && res.files.single.path != null && mounted) {
+      final file = File(res.files.single.path!);
+      setState(() => _adjuntos[req.id] = file);
     }
   }
 
@@ -123,6 +145,14 @@ class _IniciarTramiteScreenState extends State<IniciarTramiteScreen> {
               onTap: () {
                 Navigator.pop(context);
                 _seleccionarImagen(req, ImageSource.gallery);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.insert_drive_file),
+              title: const Text('Subir archivo (PDF/Word)'),
+              onTap: () {
+                Navigator.pop(context);
+                _seleccionarArchivo(req);
               },
             ),
           ],
@@ -428,15 +458,40 @@ class _IniciarTramiteScreenState extends State<IniciarTramiteScreen> {
             ),
             if (adjuntado) ...[
               const SizedBox(height: AppSpacing.sm),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(AppRadius.sm),
-                child: Image.file(
-                  _adjuntos[req.id]!,
-                  height: 120,
-                  width: double.infinity,
-                  fit: BoxFit.cover,
+              if (_esImagen(_adjuntos[req.id]!.path))
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(AppRadius.sm),
+                  child: Image.file(
+                    _adjuntos[req.id]!,
+                    height: 120,
+                    width: double.infinity,
+                    fit: BoxFit.cover,
+                  ),
+                )
+              else
+                Container(
+                  padding: const EdgeInsets.all(AppSpacing.sm),
+                  decoration: BoxDecoration(
+                    color: AppColors.fondo,
+                    borderRadius: BorderRadius.circular(AppRadius.sm),
+                    border: Border.all(color: AppColors.borde),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.insert_drive_file,
+                          color: AppColors.primary, size: 28),
+                      const SizedBox(width: AppSpacing.sm),
+                      Expanded(
+                        child: Text(
+                          _adjuntos[req.id]!.path.split(Platform.pathSeparator).last,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 13),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
             ],
             const SizedBox(height: AppSpacing.sm),
             OutlinedButton.icon(
