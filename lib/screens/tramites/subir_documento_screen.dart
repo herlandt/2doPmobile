@@ -78,7 +78,7 @@ class _SubirDocumentoScreenState extends State<SubirDocumentoScreen> {
   Future<void> _seleccionarArchivo() async {
     final res = await FilePicker.platform.pickFiles(
       type: FileType.custom,
-      allowedExtensions: ['pdf', 'doc', 'docx', 'jpg', 'jpeg', 'png'],
+      allowedExtensions: ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'jpg', 'jpeg', 'png'],
     );
     if (res != null && res.files.single.path != null) {
       final file = File(res.files.single.path!);
@@ -427,7 +427,7 @@ class _SubirDocumentoScreenState extends State<SubirDocumentoScreen> {
             ),
             ListTile(
               leading: const Icon(Icons.insert_drive_file),
-              title: const Text('Subir archivo (PDF/Word)'),
+              title: const Text('Subir archivo (PDF/Word/Excel)'),
               onTap: () {
                 Navigator.pop(context);
                 _seleccionarArchivo();

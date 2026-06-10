@@ -116,7 +116,7 @@ class _IniciarTramiteScreenState extends State<IniciarTramiteScreen> {
   Future<void> _seleccionarArchivo(DocumentoRequerido req) async {
     final res = await FilePicker.platform.pickFiles(
       type: FileType.custom,
-      allowedExtensions: ['pdf', 'doc', 'docx', 'jpg', 'jpeg', 'png'],
+      allowedExtensions: ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'jpg', 'jpeg', 'png'],
     );
     if (res != null && res.files.single.path != null && mounted) {
       final file = File(res.files.single.path!);
@@ -149,7 +149,7 @@ class _IniciarTramiteScreenState extends State<IniciarTramiteScreen> {
             ),
             ListTile(
               leading: const Icon(Icons.insert_drive_file),
-              title: const Text('Subir archivo (PDF/Word)'),
+              title: const Text('Subir archivo (PDF/Word/Excel)'),
               onTap: () {
                 Navigator.pop(context);
                 _seleccionarArchivo(req);
