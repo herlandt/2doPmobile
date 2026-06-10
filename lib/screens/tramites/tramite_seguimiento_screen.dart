@@ -217,6 +217,15 @@ class _TramiteSeguimientoScreenState extends State<TramiteSeguimientoScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Seguimiento de Trámite'),
+        actions: [
+          // CU-19 — el cliente puede cancelar su trámite mientras esté activo.
+          if (estado != null && !_esCerrado)
+            IconButton(
+              icon: const Icon(Icons.cancel_outlined),
+              tooltip: 'Cancelar trámite',
+              onPressed: _confirmarCancelacion,
+            ),
+        ],
       ),
       body: Obx(
         () {
@@ -269,6 +278,71 @@ class _TramiteSeguimientoScreenState extends State<TramiteSeguimientoScreen> {
 
   bool get _esCerrado =>
       tramitesSeguimientoService.esEstadoTerminal(estado!.estado);
+
+  /// CU-19 — Desistimiento voluntario: confirma y cancela el trámite activo.
+  /// El backend valida dueño y estado; al volver se recarga la pantalla para
+  /// mostrar el estado CANCELADO.
+  Future<void> _confirmarCancelacion() async {
+    final motivoCtrl = TextEditingController();
+    final confirmado = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Cancelar trámite'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Esta acción es definitiva: el trámite se cerrará como '
+              'CANCELADO y saldrá de las bandejas de atención.',
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: motivoCtrl,
+              maxLines: 2,
+              decoration: const InputDecoration(
+                labelText: 'Motivo (opcional)',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Volver'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.peligro,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Sí, cancelar'),
+          ),
+        ],
+      ),
+    );
+    if (confirmado != true || !mounted) return;
+
+    try {
+      final motivo = motivoCtrl.text.trim().isEmpty
+          ? 'Desistimiento voluntario del cliente'
+          : motivoCtrl.text.trim();
+      await tramitesSeguimientoService.cancelarTramite(tramiteId, motivo);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Trámite cancelado.')),
+      );
+      await _cargarEstado();
+      await _cargarFlujo();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(mensajeAmigable(e))),
+      );
+    }
+  }
 
   /// Abre el documento de resolución entregable del trámite (URL firmada).
   Future<void> _descargarResolucion() async {
