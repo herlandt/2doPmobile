@@ -38,7 +38,7 @@ class _NotificacionesScreenState extends State<NotificacionesScreen> {
     }
   }
 
-  // Tipos reales del backend: cambio_estado | asignacion | sla_vencido | observacion
+  // Tipos reales del backend: cambio_estado | asignacion | sla_vencido | observacion | documento
   IconData _icono(String tipo) {
     switch (tipo) {
       case 'cambio_estado':
@@ -49,6 +49,8 @@ class _NotificacionesScreenState extends State<NotificacionesScreen> {
         return Icons.history;
       case 'sla_vencido':
         return Icons.warning_amber;
+      case 'documento':
+        return Icons.description;
       default:
         return Icons.notifications_active;
     }
@@ -62,6 +64,8 @@ class _NotificacionesScreenState extends State<NotificacionesScreen> {
         return AppColors.observado;
       case 'sla_vencido':
         return AppColors.peligro;
+      case 'documento':
+        return AppColors.compuerta;
       default:
         return AppColors.compuerta;
     }
@@ -127,6 +131,7 @@ class _NotificacionesScreenState extends State<NotificacionesScreen> {
               final n = notifs[index];
               final leida = n['leida'] == true;
               final tipo = n['tipo'] as String? ?? '';
+              final tramiteId = (n['tramiteId'] ?? '').toString();
               return _NotifCard(
                 color: _color(tipo),
                 icono: _icono(tipo),
@@ -134,6 +139,11 @@ class _NotificacionesScreenState extends State<NotificacionesScreen> {
                 mensaje: n['mensaje'] ?? '',
                 fecha: _formatearFecha(n['fechaCreacion']),
                 leida: leida,
+                // Tocar la notificación abre el seguimiento del trámite, donde
+                // está la sección "Documentos del repositorio".
+                onTap: tramiteId.isEmpty
+                    ? null
+                    : () => Get.toNamed('/tramite-seguimiento', arguments: tramiteId),
               );
             },
           ),
@@ -152,6 +162,7 @@ class _NotifCard extends StatelessWidget {
   final String mensaje;
   final String fecha;
   final bool leida;
+  final VoidCallback? onTap;
 
   const _NotifCard({
     required this.color,
@@ -160,6 +171,7 @@ class _NotifCard extends StatelessWidget {
     required this.mensaje,
     required this.fecha,
     required this.leida,
+    this.onTap,
   });
 
   @override
@@ -245,13 +257,21 @@ class _NotifCard extends StatelessWidget {
     );
 
     // Resalte de no-leídas: borde acentuado del color del tipo.
-    if (leida) return card;
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(AppRadius.card),
-        border: Border.all(color: color.withOpacity(0.45), width: 1.4),
-      ),
-      child: card,
+    final contenido = leida
+        ? card
+        : DecoratedBox(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(AppRadius.card),
+              border: Border.all(color: color.withOpacity(0.45), width: 1.4),
+            ),
+            child: card,
+          );
+
+    if (onTap == null) return contenido;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(AppRadius.card),
+      child: contenido,
     );
   }
 }

@@ -71,7 +71,17 @@ class PushNotificationService extends GetxService {
       iOS: iosInit,
     );
 
-    await _plugin.initialize(initSettings);
+    await _plugin.initialize(
+      initSettings,
+      // Al tocar la notificación del sistema, el payload (tramiteId) lleva al
+      // seguimiento del trámite. Solo navega si el payload viene poblado.
+      onDidReceiveNotificationResponse: (resp) {
+        final tid = resp.payload;
+        if (tid != null && tid.isNotEmpty) {
+          Get.toNamed('/tramite-seguimiento', arguments: tid);
+        }
+      },
+    );
 
     final androidImpl = _plugin.resolvePlatformSpecificImplementation<
         AndroidFlutterLocalNotificationsPlugin>();
@@ -190,6 +200,7 @@ class PushNotificationService extends GetxService {
         titulo: (n['titulo'] ?? 'Aviso').toString(),
         mensaje: (n['mensaje'] ?? '').toString(),
         tipo: (n['tipo'] ?? '').toString(),
+        tramiteId: (n['tramiteId'] ?? '').toString(),
       );
       _yaNotificadas.add(id);
     } catch (_) {
@@ -253,6 +264,7 @@ class PushNotificationService extends GetxService {
           titulo: (n['titulo'] ?? 'Aviso').toString(),
           mensaje: (n['mensaje'] ?? '').toString(),
           tipo: (n['tipo'] ?? '').toString(),
+          tramiteId: (n['tramiteId'] ?? '').toString(),
         );
         _yaNotificadas.add(id);
       }
@@ -266,6 +278,7 @@ class PushNotificationService extends GetxService {
     required String titulo,
     required String mensaje,
     required String tipo,
+    String tramiteId = '',
   }) async {
     if (!_inicializado) await init();
 
@@ -292,7 +305,9 @@ class PushNotificationService extends GetxService {
       titulo,
       mensaje,
       details,
-      payload: id,
+      // El payload es el tramiteId: al tocar la notificación del sistema se abre
+      // el seguimiento del trámite (ver onDidReceiveNotificationResponse en init).
+      payload: tramiteId.isNotEmpty ? tramiteId : null,
     );
   }
 
@@ -311,6 +326,10 @@ class PushNotificationService extends GetxService {
       case 'anomalia_detectada':
         return Importance.high;
       case 'asignacion_auto':
+        return Importance.high;
+
+      // Parte 2 — documento devuelto al cliente (resolución / entregable)
+      case 'documento':
         return Importance.high;
 
       default:
