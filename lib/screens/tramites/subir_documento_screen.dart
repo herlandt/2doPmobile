@@ -79,11 +79,25 @@ class _SubirDocumentoScreenState extends State<SubirDocumentoScreen> {
     final res = await FilePicker.platform.pickFiles(
       type: FileType.custom,
       allowedExtensions: ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'jpg', 'jpeg', 'png'],
+      withData: true, // bytes garantizados aunque el path sea null (Drive/Descargas/SAF)
     );
-    if (res != null && res.files.single.path != null) {
-      final file = File(res.files.single.path!);
-      setState(() => _imagenSeleccionada = file);
+    if (res == null || res.files.isEmpty) return;
+    final file = await _resolverArchivo(res.files.single);
+    if (file != null && mounted) setState(() => _imagenSeleccionada = file);
+  }
+
+  /// File del archivo elegido: usa el path si existe; si es null (Google Drive /
+  /// Descargas / SAF en Android), vuelca los bytes a un temporal.
+  Future<File?> _resolverArchivo(PlatformFile p) async {
+    if (p.path != null) return File(p.path!);
+    if (p.bytes != null) {
+      final tmp = File(
+        '${Directory.systemTemp.path}/${DateTime.now().millisecondsSinceEpoch}_${p.name}',
+      );
+      await tmp.writeAsBytes(p.bytes!);
+      return tmp;
     }
+    return null;
   }
 
   /// True si la ruta termina en una extensión de imagen mostrable con Image.file.
